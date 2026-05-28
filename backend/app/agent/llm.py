@@ -22,7 +22,7 @@ def get_chat_model():
             model=settings.anthropic_model,
             api_key=settings.anthropic_api_key,
             temperature=0,
-            max_tokens=1024,
+            max_tokens=settings.max_output_tokens,
         )
 
     if provider == "openai":
@@ -34,6 +34,7 @@ def get_chat_model():
             model=settings.openai_model,
             api_key=settings.openai_api_key,
             temperature=0,
+            max_tokens=settings.max_output_tokens,
         )
 
     raise RuntimeError(

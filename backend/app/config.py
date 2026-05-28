@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     return_window_days: int = 30
     escalation_threshold: float = 500.0
 
+    # Guardrails (see docs/HARDENING.md)
+    max_message_chars: int = 2000
+    max_conversation_turns: int = 30
+    max_conversation_tokens: int = 60000
+    agent_recursion_limit: int = 12
+    max_output_tokens: int = 1024
+    chat_rate_limit: str = "10/minute"
+
     @property
     def has_llm_key(self) -> bool:
         if self.llm_provider == "anthropic":

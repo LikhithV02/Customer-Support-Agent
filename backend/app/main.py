@@ -1,9 +1,11 @@
 import json
-from datetime import timezone
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from sqlalchemy import func, select
 from sse_starlette.sse import EventSourceResponse
 
 from app.agent.runner import run_agent_turn
@@ -20,7 +22,15 @@ from app.schemas import (
     ReasoningEventOut,
 )
 
+settings = get_settings()
+
+# Per-IP rate limiter for the chat endpoint. The limit string is read from
+# settings at decorator-binding time so it can be tuned via env.
+limiter = Limiter(key_func=get_remote_address, default_limits=[])
+
 app = FastAPI(title="ACME Refund Support Agent")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Same-origin in Docker (nginx proxies /api); permissive CORS eases local dev.
 app.add_middleware(
@@ -38,7 +48,6 @@ def _startup() -> None:
 
 @app.get("/api/health")
 def health() -> dict:
-    settings = get_settings()
     return {
         "status": "ok",
         "llm_provider": settings.llm_provider,
@@ -47,9 +56,41 @@ def health() -> dict:
 
 
 @app.post("/api/chat")
-async def chat(req: ChatRequest):
+@limiter.limit(lambda: get_settings().chat_rate_limit)
+async def chat(request: Request, req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="message must not be empty")
+
+    # Guardrail 1: per-message length cap.
+    if len(req.message) > settings.max_message_chars:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"message is too long ({len(req.message)} chars); the limit is "
+                f"{settings.max_message_chars}."
+            ),
+        )
+
+    # Guardrail 2: per-conversation turn cap. Counted before the SSE opens so
+    # the client gets a real HTTP status, not a half-stream.
+    if req.conversation_id:
+        with get_session() as session:
+            existing = (
+                session.scalar(
+                    select(func.count(Message.id)).where(
+                        Message.conversation_id == req.conversation_id
+                    )
+                )
+                or 0
+            )
+            if existing >= settings.max_conversation_turns:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"this conversation has reached its message limit "
+                        f"({settings.max_conversation_turns}). Please start a new chat."
+                    ),
+                )
 
     async def event_stream():
         session = get_session()

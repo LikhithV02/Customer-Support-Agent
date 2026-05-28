@@ -54,23 +54,60 @@ You only need a key for the provider you select.
 
 ## Architecture
 
-```
-React + Vite SPA  ──REST + SSE──►  FastAPI
-  /chat   (customer chat)            POST /api/chat                     (SSE: reasoning steps + reply)
-  /admin  (reasoning logs)           GET  /api/conversations            (list)
-                                     GET  /api/conversations/{id}       (history)
-                                     GET  /api/conversations/{id}/stream (SSE: live trace)
-                                            │
-                                            ▼
-                                     LangGraph agent (ReAct loop)
-                                       agent node (LLM + bound tools)
-                                         ⇅ loop
-                                       tools node
-                                            │
-                              ┌─────────────┼──────────────┐
-                              ▼             ▼              ▼
-                         SQLite        Policy engine   Event broadcaster
-                       (SQLAlchemy)   (deterministic)  (in-proc pub/sub → admin SSE)
+```mermaid
+flowchart LR
+    subgraph UI["React + Vite SPA"]
+        Chat["/chat<br/>Customer chat"]
+        Admin["/admin<br/>Reasoning logs"]
+    end
+
+    subgraph API["FastAPI backend"]
+        Chat_API["POST /api/chat<br/>(SSE)"]
+        Convo_REST["GET /api/conversations<br/>GET /api/conversations/{id}"]
+        Stream_API["GET /api/conversations/{id}/stream<br/>(SSE)"]
+    end
+
+    subgraph Core["Agent core"]
+        Runner["agent/runner.py<br/>turn orchestration<br/>+ guardrails"]
+        Graph["LangGraph StateGraph<br/>(agent ⇄ tools)"]
+        Tools["Tools<br/>(lookup / order / eligibility / refund)"]
+    end
+
+    subgraph Data["Data + Policy"]
+        Engine["policy/engine.py<br/>deterministic gate"]
+        DB[("SQLite<br/>(SQLAlchemy)")]
+        Bus["events.py<br/>in-process pub/sub"]
+    end
+
+    LLM["LLM provider<br/>Anthropic / OpenAI<br/>(agent/llm.py)"]
+
+    Chat -- REST + SSE --> Chat_API
+    Admin -- REST --> Convo_REST
+    Admin -- SSE --> Stream_API
+
+    Chat_API --> Runner
+    Convo_REST --> DB
+    Stream_API --> Bus
+
+    Runner --> Graph
+    Graph <--> Tools
+    Graph <--> LLM
+    Tools --> Engine
+    Tools --> DB
+    Runner --> DB
+    Runner --> Bus
+
+    classDef ui fill:#1e3a8a,stroke:#3b82f6,color:#fff;
+    classDef api fill:#312e81,stroke:#6366f1,color:#fff;
+    classDef core fill:#3f3f46,stroke:#a78bfa,color:#fff;
+    classDef data fill:#064e3b,stroke:#10b981,color:#fff;
+    classDef llm fill:#7c2d12,stroke:#f97316,color:#fff;
+
+    class Chat,Admin ui;
+    class Chat_API,Convo_REST,Stream_API api;
+    class Runner,Graph,Tools core;
+    class Engine,DB,Bus data;
+    class LLM llm;
 ```
 
 The three layers are cleanly separated: the **UI** never talks to the LLM
@@ -81,8 +118,28 @@ directly, the **API/orchestration** layer owns the agent and persistence, and th
 
 The agent is a LangGraph `StateGraph` running a tool-calling **ReAct loop**: an
 `agent` node (the chat model with the refund tools bound) and a `tools` node,
-looping until the model produces a final reply. The tools map onto the natural
-phases of a refund decision:
+looping until the model produces a final reply. The diagram below is generated
+directly from the compiled graph (`agent.get_graph().draw_mermaid()`), so it
+always matches the live code:
+
+```mermaid
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+graph TD;
+    __start__([__start__]):::first
+    agent(agent)
+    tools(tools)
+    __end__([__end__]):::last
+    __start__ --> agent;
+    tools --> agent;
+    agent -.-> tools;
+    agent -.-> __end__;
+    classDef default fill:#f2f0ff,line-height:1.2,color:#111
+    classDef first fill-opacity:0
+    classDef last fill:#bfb6fc,color:#111
+```
+
+The `tools` node bundles the refund toolkit, each mapping to a natural phase of
+the decision:
 
 1. **`lookup_customer`** — verify identity by email or name (required first).
 2. **`get_order` / `list_orders`** — fetch the order(s), scoped to that customer.
@@ -180,6 +237,32 @@ an API key is present, and is skipped otherwise.
 
 A full record of every verification step, the edge-case coverage matrix, results,
 and fixes is in [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+
+---
+
+## Hardening / guardrails
+
+On top of the deterministic refund-policy gate, the build ships a set of
+**lightweight guardrails** that close two threat classes — prompt injection
+and off-topic / token-burn abuse — without compromising the live demo:
+
+- Per-message length cap (HTTP 400 if oversize).
+- Per-conversation **turn cap** (HTTP 429 once exhausted).
+- Per-conversation **token budget** (polite refusal, no further LLM calls).
+- Bounded LangGraph `recursion_limit` per turn + `max_tokens` on both providers.
+- **Per-IP rate limit** on `/api/chat` via SlowAPI.
+- Expanded injection-detection patterns + `rapidfuzz` fuzzy matching for
+  obfuscations (`ignroe`, `i.g.n.o.r.e`, zero-width chars, Base64 blobs).
+- **Output sanitizer**: any assistant claim of "approved/processed" that is
+  not backed by a successful `issue_refund` tool result this turn is annotated
+  with a clear correction note (the deterministic gate already protects the
+  money — this extends that guarantee to the chat surface).
+- Restructured system prompt with an OWASP-style separation of system rules
+  from untrusted user data and an explicit scope-refusal rule.
+
+All thresholds are env-configurable (see [`.env.example`](.env.example)) and
+documented with their HTTP/UX behaviour, defense rationale, and verification
+commands in [`docs/HARDENING.md`](docs/HARDENING.md).
 
 ---
 

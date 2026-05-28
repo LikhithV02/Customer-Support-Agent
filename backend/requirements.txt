@@ -10,5 +10,7 @@ langchain-core==0.3.28
 langchain-anthropic==0.3.1
 langchain-openai==0.2.14
 httpx==0.28.1
+slowapi==0.1.9
+rapidfuzz==3.10.1
 pytest==8.3.4
 pytest-asyncio==0.25.0

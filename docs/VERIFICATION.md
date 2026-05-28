@@ -8,6 +8,11 @@ way. It maps directly to the verification checklist in the implementation plan.
 end-to-end; the OpenAI path is verified at the integration level (see
 [Known limitations](#known-limitations)).
 
+> **Note:** this report covers the original build. A subsequent hardening pass
+> added guardrails for prompt injection and cost/abuse — see
+> [`docs/HARDENING.md`](HARDENING.md). The current total is **35 passed** in
+> Docker with a key (`24 + 10` new guardrail tests + `1` live LLM test).
+
 ## Test environment
 
 | Layer | Detail |
