@@ -5,6 +5,7 @@ import {
   subscribeToConversation,
 } from "../api";
 import ReasoningTimeline from "../components/ReasoningTimeline";
+import Markdown from "../components/Markdown";
 import type {
   AgentEvent,
   ConversationDetail,
@@ -135,13 +136,13 @@ export default function Admin() {
                   className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[90%] whitespace-pre-wrap rounded-xl px-3 py-2 text-sm ${
+                    className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${
                       m.role === "user"
-                        ? "bg-indigo-500/90 text-white"
+                        ? "whitespace-pre-wrap bg-indigo-500/90 text-white"
                         : "border border-slate-800 bg-slate-900 text-slate-200"
                     }`}
                   >
-                    {m.content}
+                    {m.role === "user" ? m.content : <Markdown>{m.content}</Markdown>}
                   </div>
                 </div>
               ))}

@@ -41,13 +41,27 @@ from app.events import broadcaster
 
 _DECISION_TOOLS = {"issue_refund", "escalate_to_human"}
 
-# Words/phrases that *claim* a refund was granted. If the agent's final reply
-# contains any of these but no `issue_refund` returned "approved" this turn,
-# the sanitizer prepends a correction.
+# Phrases that make an *affirmative* claim a refund was granted. If the agent's
+# final reply contains one of these but no `issue_refund` returned "approved"
+# this turn, the sanitizer prepends a correction.
+#
+# These must be affirmative success phrasings — NOT bare words like "approved"
+# or "refunded" — so that legitimate denials ("this order has already been
+# refunded") and escalations ("it cannot be approved automatically") don't trip
+# the sanitizer. The intervening-word structure also naturally excludes negated
+# forms ("has not been approved"), since the negation breaks "has been approved".
 _APPROVAL_CLAIM = re.compile(
-    r"\b(approved|refunded|been processed|been issued|been refunded|"
-    r"i(?:'ve| have)\s+approved|i(?:'ve| have)\s+processed|"
-    r"refund\s+is\s+(?:approved|processed))\b",
+    r"(?:"
+    # "your/the refund [of $X] has been | is | was approved|processed|issued|…"
+    r"(?:your |the )?refund(?:\s+of\s+\$[\d,.]+)?\s+(?:has been|is|was)\s+"
+    r"(?:approved|processed|issued|completed|refunded)"
+    # "successfully | now approved|processed|issued|refunded"
+    r"|(?:successfully|now)\s+(?:approved|processed|issued|refunded)"
+    # "I've | I have approved|processed|issued (your|the) refund"
+    r"|i(?:'ve| have)\s+(?:approved|processed|issued)\s+(?:your |the )?refund"
+    # "approved|processed|issued your refund"
+    r"|(?:approved|processed|issued)\s+your\s+refund"
+    r")",
     re.I,
 )
 

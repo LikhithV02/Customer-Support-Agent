@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { streamChat } from "../api";
 import ReasoningTimeline from "../components/ReasoningTimeline";
+import Markdown from "../components/Markdown";
 import type { AgentEvent, ChatMessage, StepEvent } from "../types";
 
 const SAMPLE_PROMPTS = [
@@ -91,13 +92,13 @@ export default function Chat() {
             className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm ${
+              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
                 m.role === "user"
-                  ? "bg-indigo-500 text-white"
+                  ? "whitespace-pre-wrap bg-indigo-500 text-white"
                   : "border border-slate-800 bg-slate-900 text-slate-200"
               }`}
             >
-              {m.content}
+              {m.role === "user" ? m.content : <Markdown>{m.content}</Markdown>}
             </div>
           </div>
         ))}

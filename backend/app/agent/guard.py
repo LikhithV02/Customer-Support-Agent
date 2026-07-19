@@ -21,9 +21,13 @@ import re
 from rapidfuzz import fuzz
 
 _PATTERNS: list[tuple[str, re.Pattern]] = [
-    ("override_policy", re.compile(r"ignore (the |all |your )?(rules|policy|policies|instructions)", re.I)),
+    # `(?:\s+\S+){0,2}?` tolerates up to two intervening words so phrasings
+    # like "ignore all *refund* rules" (README's headline example) still match.
+    ("override_policy", re.compile(r"\bignore\b(?:\s+\S+){0,2}?\s+(?:rules|policy|policies|instructions)\b", re.I)),
     ("force_approval", re.compile(r"\b(approve|refund) (it|this|me|the order)?\s*(anyway|regardless|now)\b", re.I)),
-    ("authority_claim", re.compile(r"\b(i am|i'm|as) (the |a )?(ceo|manager|admin|administrator|supervisor|owner|developer)\b", re.I)),
+    # Same tolerance for an intervening word, e.g. "I'm the *store* manager".
+    # Capped at two words to avoid flagging "I am frustrated, the manager said…".
+    ("authority_claim", re.compile(r"\b(?:i am|i'm|as)\b(?:\s+\S+){0,2}?\s+(?:ceo|manager|admin|administrator|supervisor|owner|developer)\b", re.I)),
     ("role_override", re.compile(r"\b(you are now|act as|pretend to be|new instructions|system prompt|developer mode|jailbreak)\b", re.I)),
     ("bypass", re.compile(r"\b(bypass|override|disable|skip) (the )?(policy|rules|check|verification|escalation)\b", re.I)),
     ("exfiltration", re.compile(r"\b(reveal|show|print|repeat) (me )?(your |the )?(system prompt|instructions|policy rules)\b", re.I)),
