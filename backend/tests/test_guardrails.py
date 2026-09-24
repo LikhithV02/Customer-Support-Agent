@@ -484,3 +484,34 @@ async def test_usage_events_are_emitted_when_model_reports_usage(
     payload = usage[0]["payload"]
     assert payload["input_tokens"] == 12
     assert payload["output_tokens"] == 34
+
+
+async def test_missing_token_is_401_not_rate_limited(client, monkeypatch):
+    # Unauthenticated requests don't consume a shared per-IP bucket.
+    monkeypatch.setattr(get_settings(), "chat_rate_limit", "1/minute")
+    statuses = {(await client.post("/api/chat", json={"message": "hi"})).status_code for _ in range(3)}
+    assert statuses == {401}
+
+
+async def test_db_failure_mid_stream_ends_cleanly(client, monkeypatch):
+    from app.agent import runner as runner_module
+
+    async def broken_history(_cid):
+        raise TimeoutError("QueuePool limit reached")
+
+    monkeypatch.setattr(runner_module, "_history", broken_history)
+    res = await client.post("/api/chat", json={"message": "hello"}, headers=auth("CUST-001"))
+    assert res.status_code == 200
+    events = _sse_events(res.text)
+    assert events[-1]["kind"] == "error"
+    assert "QueuePool" not in res.text
+    # Lock and slot were still released.
+    assert await shared.turns_in_flight() == 0
+
+
+async def test_tools_without_context_are_denied(engine):
+    from app.agent.tools import TOOLS
+
+    tool = next(t for t in TOOLS if t.name == "list_orders")
+    result = json.loads(await tool.ainvoke({}))
+    assert result["error"] == "identity_not_verified"

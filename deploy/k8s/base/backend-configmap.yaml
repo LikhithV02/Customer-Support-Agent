@@ -1,0 +1,26 @@
+# Non-secret backend settings. Secrets (DATABASE_URL, REDIS_URL, JWT_SECRET or
+# JWT_JWKS_URL, LLM keys, SENTRY_DSN) live in the `acme-backend-secrets` Secret
+# — see secret.example.yaml and docs/PRODUCTION.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acme-backend-config
+data:
+  ENV: prod
+  AUTH_MODE: jwt
+  LLM_PROVIDER: anthropic
+  LLM_TIMEOUT_S: "60"
+  LLM_MAX_RETRIES: "2"
+  WEB_CONCURRENCY: "1"
+  # Trust X-Forwarded-For from the ingress controller. Narrow this to the
+  # ingress pods' CIDR in production.
+  FORWARDED_ALLOW_IPS: "*"
+  DB_POOL_SIZE: "10"
+  DB_MAX_OVERFLOW: "10"
+  MAX_CONCURRENT_TURNS: "200"
+  TURN_TIMEOUT_S: "120"
+  CHAT_RATE_LIMIT: 10/minute
+  CUSTOMER_DAILY_TOKEN_BUDGET: "300000"
+  RETENTION_DAYS: "90"
+  LOG_LEVEL: INFO
+  LOG_JSON: "true"

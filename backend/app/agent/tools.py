@@ -11,6 +11,12 @@ runs, so the model can only ever see or act on that customer's orders.
 
 Each tool call opens its own short-lived DB session, so no connection is held
 while the model is thinking.
+
+The tools are built ONCE per process (`TOOLS`); the per-request identity is
+passed in through LangGraph's RunnableConfig (`tool_config(ctx)`), which
+LangChain injects into the `config` parameter and hides from the model's tool
+schema. Re-creating `@tool` objects per request regenerates their pydantic
+schemas and was the single largest CPU cost per turn under load.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -48,8 +55,18 @@ def _order_view(order: Order) -> dict:
     }
 
 
-def build_tools(ctx: ToolContext) -> list:
-    def _require_identity() -> str | None:
+def tool_config(ctx: ToolContext) -> dict:
+    """RunnableConfig fragment that carries `ctx` to the tools."""
+    return {"configurable": {"tool_ctx": ctx}}
+
+
+def _ctx(config: RunnableConfig) -> ToolContext:
+    ctx = (config or {}).get("configurable", {}).get("tool_ctx")
+    return ctx if isinstance(ctx, ToolContext) else ToolContext(conversation_id="")
+
+
+def _build_tools() -> list:
+    def _require_identity(ctx: ToolContext) -> str | None:
         if ctx.verified_customer_id is None:
             return json.dumps(
                 {
@@ -60,7 +77,7 @@ def build_tools(ctx: ToolContext) -> list:
         return None
 
     async def _get_owned_order(
-        session, order_id: str, for_update: bool = False
+        ctx: ToolContext, session, order_id: str, for_update: bool = False
     ) -> tuple[Order | None, str | None]:
         stmt = select(Order).where(Order.id == order_id)
         if for_update:
@@ -82,12 +99,13 @@ def build_tools(ctx: ToolContext) -> list:
         return order, None
 
     @tool
-    async def get_my_profile() -> str:
+    async def get_my_profile(config: RunnableConfig) -> str:
         """Load the authenticated customer's profile (name, email, loyalty tier).
 
         The customer is already signed in; you never need to ask who they are.
         """
-        guard = _require_identity()
+        ctx = _ctx(config)
+        guard = _require_identity(ctx)
         if guard:
             return guard
         async with db.SessionLocal() as session:
@@ -105,9 +123,10 @@ def build_tools(ctx: ToolContext) -> list:
         )
 
     @tool
-    async def list_orders() -> str:
+    async def list_orders(config: RunnableConfig) -> str:
         """List all orders belonging to the signed-in customer."""
-        guard = _require_identity()
+        ctx = _ctx(config)
+        guard = _require_identity(ctx)
         if guard:
             return guard
         async with db.SessionLocal() as session:
@@ -122,30 +141,32 @@ def build_tools(ctx: ToolContext) -> list:
         return json.dumps({"orders": [_order_view(o) for o in orders]})
 
     @tool
-    async def get_order(order_id: str) -> str:
+    async def get_order(order_id: str, config: RunnableConfig) -> str:
         """Get the details of a single order belonging to the signed-in customer."""
-        guard = _require_identity()
+        ctx = _ctx(config)
+        guard = _require_identity(ctx)
         if guard:
             return guard
         async with db.SessionLocal() as session:
-            order, err = await _get_owned_order(session, order_id)
+            order, err = await _get_owned_order(ctx, session, order_id)
         if err:
             return err
         return json.dumps(_order_view(order))
 
     @tool
-    async def check_refund_eligibility(order_id: str) -> str:
+    async def check_refund_eligibility(order_id: str, config: RunnableConfig) -> str:
         """Check whether an order is eligible for a refund WITHOUT issuing one.
 
         Runs the deterministic refund policy and returns eligibility, whether the
         refund requires human escalation, and the reasons. Use this before
         deciding what to tell the customer.
         """
-        guard = _require_identity()
+        ctx = _ctx(config)
+        guard = _require_identity(ctx)
         if guard:
             return guard
         async with db.SessionLocal() as session:
-            order, err = await _get_owned_order(session, order_id)
+            order, err = await _get_owned_order(ctx, session, order_id)
             if err:
                 return err
             customer = await session.get(Customer, ctx.verified_customer_id)
@@ -153,7 +174,7 @@ def build_tools(ctx: ToolContext) -> list:
         return json.dumps({"order_id": order_id, **result.to_dict()})
 
     @tool
-    async def issue_refund(order_id: str) -> str:
+    async def issue_refund(order_id: str, config: RunnableConfig) -> str:
         """Attempt to issue a refund for an order.
 
         This is the only way to actually grant a refund. The refund is re-validated
@@ -161,14 +182,15 @@ def build_tools(ctx: ToolContext) -> list:
         permits it. Final-sale, out-of-window, already-refunded, or >$500 requests
         will be recorded as denied or escalated — never approved.
         """
-        guard = _require_identity()
+        ctx = _ctx(config)
+        guard = _require_identity(ctx)
         if guard:
             return guard
 
         async with db.SessionLocal() as session:
             # Row lock: concurrent refund attempts on the same order serialise
             # here, so the second one sees `refunded=True` and is denied.
-            order, err = await _get_owned_order(session, order_id, for_update=True)
+            order, err = await _get_owned_order(ctx, session, order_id, for_update=True)
             if err:
                 return err
             customer = await session.get(Customer, ctx.verified_customer_id)
@@ -220,17 +242,18 @@ def build_tools(ctx: ToolContext) -> list:
         )
 
     @tool
-    async def escalate_to_human(order_id: str, reason: str) -> str:
+    async def escalate_to_human(order_id: str, reason: str, config: RunnableConfig) -> str:
         """Escalate a refund request to a human specialist.
 
         Use this for refunds over $500 or any case the policy cannot auto-approve.
         Records the escalation; a human will follow up with the customer.
         """
-        guard = _require_identity()
+        ctx = _ctx(config)
+        guard = _require_identity(ctx)
         if guard:
             return guard
         async with db.SessionLocal() as session:
-            order, err = await _get_owned_order(session, order_id)
+            order, err = await _get_owned_order(ctx, session, order_id)
             if err:
                 return err
             session.add(
@@ -260,3 +283,6 @@ def build_tools(ctx: ToolContext) -> list:
         issue_refund,
         escalate_to_human,
     ]
+
+
+TOOLS: list = _build_tools()

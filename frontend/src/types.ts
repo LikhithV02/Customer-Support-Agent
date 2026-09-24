@@ -9,6 +9,9 @@ export interface StepEvent {
     | "policy_eval"
     | "decision"
     | "injection_flag"
+    | "usage"
+    | "budget_exhausted"
+    | "output_correction"
     | "error";
   node: string;
   payload: Record<string, any>;

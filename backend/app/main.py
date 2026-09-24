@@ -53,6 +53,11 @@ from app.schemas import (
 settings = get_settings()
 logger = logging.getLogger("app")
 
+STREAM_ERROR_MESSAGE = (
+    "Sorry — something went wrong on our side while handling that. "
+    "Please try again in a moment."
+)
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -180,6 +185,11 @@ def _rate_limit_key(request: Request) -> str:
 
 
 async def enforce_chat_rate_limit(request: Request) -> None:
+    if principal_from_request(request) is None:
+        # Missing/invalid token: let the auth dependency answer 401. Counting
+        # these per IP would let one bad client behind a shared NAT/proxy
+        # exhaust the limit for everyone else on that IP.
+        return
     allowed, reset_in = await shared.hit_rate_limit(
         f"chat:{_rate_limit_key(request)}", settings.chat_rate_limit
     )
@@ -271,6 +281,17 @@ async def chat(req: ChatRequest, principal: Principal = Depends(require_customer
         try:
             async for event in run_agent_turn(principal.sub, cid, req.message):
                 yield {"data": json.dumps(event)}
+        except Exception as exc:
+            # Headers are already sent, so an exception here would tear the
+            # connection. End the stream cleanly with a generic error instead.
+            log_event(
+                logger,
+                "chat stream failed",
+                level=logging.ERROR,
+                error_type=type(exc).__name__,
+                error=str(exc)[:500],
+            )
+            yield {"data": json.dumps({"kind": "error", "message": STREAM_ERROR_MESSAGE})}
         finally:
             SSE_STREAMS.labels("chat").dec()
             await shared.release_turn_slot(slot)

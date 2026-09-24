@@ -15,6 +15,9 @@ const STEP_META: Record<
     chip: "text-rose-300",
   },
   error: { label: "Error", dot: "bg-rose-500", chip: "text-rose-300" },
+  usage: { label: "Token usage", dot: "bg-slate-600", chip: "text-slate-400" },
+  budget_exhausted: { label: "Budget exhausted", dot: "bg-amber-500", chip: "text-amber-300" },
+  output_correction: { label: "Output corrected", dot: "bg-rose-400", chip: "text-rose-300" },
 };
 
 const DECISION_COLOR: Record<string, string> = {

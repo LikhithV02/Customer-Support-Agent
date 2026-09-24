@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed-synthetic
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: seed
+          image: acme-backend
+          command: ["python", "-m", "scripts.seed_synthetic", "--customers", "10000", "--reset"]
+          envFrom:
+            - configMapRef:
+                name: acme-backend-config
+            - secretRef:
+                name: acme-backend-secrets

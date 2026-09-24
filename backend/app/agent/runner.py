@@ -36,20 +36,19 @@ import re
 import time
 import uuid
 from collections.abc import AsyncIterator
-from datetime import timezone
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from sqlalchemy import select, update
+from sqlalchemy import insert, select, update
 
 from app import redis as shared
-from app.agent.graph import build_agent
+from app.agent.graph import get_agent
 from app.agent.guard import detect_injection
 from app.agent.llm import use_prompt_caching
 from app.agent.prompts import get_system_prompt
-from app.agent.tools import ToolContext
+from app.agent.tools import ToolContext, tool_config
 from app.config import get_settings
 from app.db import session as db
-from app.db.models import Conversation, Message, ReasoningEvent
+from app.db.models import Conversation, Message, ReasoningEvent, utcnow
 from app.events import broadcaster
 from app.observability import (
     INJECTION_FLAGS,
@@ -201,6 +200,8 @@ async def run_agent_turn(
     await broadcaster.publish(cid, {"kind": "message", "role": "user", "content": user_text})
 
     async def emit(step_type: str, node: str, payload: dict, tokens: int = 0) -> dict:
+        # Two Core statements in one short transaction (no ORM unit-of-work:
+        # this runs for every reasoning step, so it's on the hot path).
         async with db.SessionLocal() as session:
             # Atomic per-conversation sequence number (safe across pods).
             values = {"event_seq": Conversation.event_seq + 1}
@@ -212,22 +213,24 @@ async def run_agent_turn(
                 .values(**values)
                 .returning(Conversation.event_seq)
             )
-            row = ReasoningEvent(
-                conversation_id=cid,
-                message_id=user_msg_id,
-                seq=seq,
-                step_type=step_type,
-                node=node,
-                payload=payload,
+            created = utcnow()
+            row_id = await session.scalar(
+                insert(ReasoningEvent)
+                .values(
+                    conversation_id=cid,
+                    message_id=user_msg_id,
+                    seq=seq,
+                    step_type=step_type,
+                    node=node,
+                    payload=payload,
+                    created_at=created,
+                )
+                .returning(ReasoningEvent.id)
             )
-            session.add(row)
             await session.commit()
-        created = row.created_at
-        if created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
         event = {
             "kind": "step",
-            "id": row.id,
+            "id": row_id,
             "seq": seq,
             "step_type": step_type,
             "node": node,
@@ -275,7 +278,7 @@ async def run_agent_turn(
         return
 
     ctx = ToolContext(conversation_id=cid, verified_customer_id=customer_id)
-    agent = build_agent(ctx)
+    agent = get_agent()
 
     # History already includes the user message we just saved.
     messages = [_system_message()] + await _history(cid)
@@ -288,7 +291,7 @@ async def run_agent_turn(
             async for chunk in agent.astream(
                 {"messages": messages},
                 stream_mode="updates",
-                config={"recursion_limit": settings.agent_recursion_limit},
+                config={"recursion_limit": settings.agent_recursion_limit, **tool_config(ctx)},
             ):
                 for node, update_ in chunk.items():
                     for msg in update_.get("messages", []):

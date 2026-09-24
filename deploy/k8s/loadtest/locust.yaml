@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: locust-master
+  labels:
+    app.kubernetes.io/name: locust-master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: locust-master
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: locust-master
+    spec:
+      containers:
+        - name: locust
+          image: acme-loadtest
+          args: ["-f", "locustfile.py", "--master", "--csv", "results/run", "--html", "results/run.html"]
+          envFrom:
+            - configMapRef:
+                name: locust-config
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: acme-backend-secrets
+                  key: JWT_SECRET
+          ports:
+            - { name: web, containerPort: 8089 }
+            - { name: comm, containerPort: 5557 }
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+            limits: { memory: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: locust-master
+spec:
+  selector:
+    app.kubernetes.io/name: locust-master
+  ports:
+    - { name: web, port: 8089, targetPort: web }
+    - { name: comm, port: 5557, targetPort: comm }
+---
+# Each worker process comfortably drives ~500–1,000 SSE users; scale replicas
+# to reach the target user count (e.g. 10 workers for 5,000+ users).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: locust-worker
+  labels:
+    app.kubernetes.io/name: locust-worker
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: locust-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: locust-worker
+    spec:
+      containers:
+        - name: locust
+          image: acme-loadtest
+          args: ["-f", "locustfile.py", "--worker", "--master-host", "locust-master"]
+          envFrom:
+            - configMapRef:
+                name: locust-config
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: acme-backend-secrets
+                  key: JWT_SECRET
+          resources:
+            requests: { cpu: "1", memory: 512Mi }
+            limits: { memory: 1Gi }

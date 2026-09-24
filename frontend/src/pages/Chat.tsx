@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { streamChat } from "../api";
+import { friendlyError, streamChat } from "../api";
+import { getToken, onTokenChange } from "../auth";
 import ReasoningTimeline from "../components/ReasoningTimeline";
 import Markdown from "../components/Markdown";
 import type { AgentEvent, ChatMessage, StepEvent } from "../types";
 
 const SAMPLE_PROMPTS = [
-  "Hi, my email is alice@example.com and I'd like a refund for order ORD-1001.",
-  "I'm carol@example.com — I want to return my TV, order ORD-1003.",
-  "This is bob@example.com, refund my t-shirt ORD-1002 please.",
+  "What orders do I have?",
+  "I'd like a refund for my most recent order.",
+  "Can I return order ORD-1001?",
 ];
 
 export default function Chat() {
@@ -16,14 +17,27 @@ export default function Chat() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState(Boolean(getToken("customer")));
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // A new identity always starts a fresh conversation.
+  useEffect(
+    () =>
+      onTokenChange(() => {
+        setSignedIn(Boolean(getToken("customer")));
+        setMessages([]);
+        setSteps([]);
+        setConversationId(null);
+      }),
+    [],
+  );
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, steps]);
 
   async function send(text: string) {
-    if (!text.trim() || streaming) return;
+    if (!text.trim() || streaming || !signedIn) return;
     setMessages((m) => [...m, { role: "user", content: text }]);
     setInput("");
     setSteps([]);
@@ -41,10 +55,7 @@ export default function Chat() {
           setMessages((m) => [...m, { role: "assistant", content: event.content }]);
           break;
         case "error":
-          setMessages((m) => [
-            ...m,
-            { role: "assistant", content: `⚠️ ${event.message}` },
-          ]);
+          setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${event.message}` }]);
           break;
       }
     };
@@ -52,10 +63,7 @@ export default function Chat() {
     try {
       await streamChat(text, conversationId, handle);
     } catch (err) {
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: `⚠️ ${(err as Error).message}` },
-      ]);
+      setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${friendlyError(err)}` }]);
     } finally {
       setStreaming(false);
     }
@@ -64,7 +72,12 @@ export default function Chat() {
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col px-4">
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto py-6">
-        {messages.length === 0 && (
+        {!signedIn && (
+          <div className="mt-10 text-center text-sm text-slate-400">
+            Please sign in to chat with support. (Local dev: pick a customer in the DEV menu above.)
+          </div>
+        )}
+        {signedIn && messages.length === 0 && (
           <div className="mt-10 text-center">
             <h2 className="text-lg font-semibold text-slate-200">
               How can I help with your refund today?
@@ -137,7 +150,7 @@ export default function Chat() {
           />
           <button
             type="submit"
-            disabled={streaming || !input.trim()}
+            disabled={streaming || !signedIn || !input.trim()}
             className="rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Send

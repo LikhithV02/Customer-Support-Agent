@@ -1,15 +1,71 @@
+# Local stack: Postgres + Redis + migrations + backend + frontend (nginx).
+#
+#   cp .env.example .env    # add an LLM key (or set LLM_PROVIDER=fake)
+#   docker compose up --build
+#
+# Load test (see docs/LOADTESTING.md):
+#   LLM_PROVIDER=fake docker compose --profile loadtest up --build --scale backend=2 --scale locust-worker=4
+x-backend-env: &backend-env
+  ENV: ${ENV:-dev}
+  AUTH_MODE: ${AUTH_MODE:-dev}
+  JWT_SECRET: ${JWT_SECRET:-}
+  LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+  LLM_FALLBACK_PROVIDER: ${LLM_FALLBACK_PROVIDER:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  FAKE_LLM_LATENCY_MS: ${FAKE_LLM_LATENCY_MS:-1500}
+  FAKE_LLM_ERROR_RATE: ${FAKE_LLM_ERROR_RATE:-0}
+  DATABASE_URL: postgresql://acme:acme@postgres:5432/acme
+  REDIS_URL: redis://redis:6379/0
+  MAX_CONCURRENT_TURNS: ${MAX_CONCURRENT_TURNS:-200}
+  CHAT_RATE_LIMIT: ${CHAT_RATE_LIMIT:-10/minute}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: acme
+      POSTGRES_PASSWORD: acme
+      POSTGRES_DB: acme
+    command: ["postgres", "-c", "max_connections=300", "-c", "shared_buffers=256MB"]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U acme -d acme"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: apply migrations and load the demo fixture.
+  migrate:
+    build: ./backend
+    environment: *backend-env
+    command: ["sh", "-c", "alembic upgrade head && python -m app.db.seed"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     build: ./backend
-    environment:
-      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      DATABASE_URL: sqlite:////app/var/app.db
-    volumes:
-      - backend_data:/app/var
-    ports:
-      - "8000:8000"
+    environment: *backend-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
 
   frontend:
     build: ./frontend
@@ -17,7 +73,54 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "3000:80"
+      - "3000:8080"
+
+  # --- load testing (docker compose --profile loadtest ...) -----------------
+  seed-synthetic:
+    profiles: ["loadtest"]
+    build: ./backend
+    environment: *backend-env
+    command: ["python", "-m", "scripts.seed_synthetic", "--customers", "${LT_CUSTOMERS:-10000}", "--reset"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  locust-master:
+    profiles: ["loadtest"]
+    build: ./loadtest
+    command: >
+      -f locustfile.py --master --host http://frontend:8080
+      ${LOCUST_ARGS:-}
+    environment:
+      LOAD_SHAPE: ${LOAD_SHAPE:-}
+      LT_SCALE: ${LT_SCALE:-1}
+      LT_CUSTOMERS: ${LT_CUSTOMERS:-10000}
+      LT_WORKERS: ${LT_WORKERS:-4}
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me-0123456789}
+      # for `docker compose run --entrypoint python locust-master check_invariants.py`
+      DATABASE_URL: postgresql://acme:acme@postgres:5432/acme
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./loadtest/results:/loadtest/results
+    depends_on:
+      seed-synthetic:
+        condition: service_completed_successfully
+      frontend:
+        condition: service_started
+
+  locust-worker:
+    profiles: ["loadtest"]
+    build: ./loadtest
+    command: ["-f", "locustfile.py", "--worker", "--master-host", "locust-master"]
+    environment:
+      LOAD_SHAPE: ${LOAD_SHAPE:-}
+      LT_SCALE: ${LT_SCALE:-1}
+      LT_CUSTOMERS: ${LT_CUSTOMERS:-10000}
+      LT_WORKERS: ${LT_WORKERS:-4}
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me-0123456789}
+    depends_on:
+      - locust-master
 
 volumes:
-  backend_data:
+  pg_data:

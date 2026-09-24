@@ -1,0 +1,75 @@
+# Self-contained dev/staging-like stack for kind/minikube:
+#   kubectl apply -k deploy/k8s/overlays/dev
+# Includes single-replica Postgres + Redis and uses the fake LLM, so it runs
+# without API keys and is suitable as a load-test target.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: acme-dev
+resources:
+  - namespace.yaml
+  - ../../base
+  - postgres.yaml
+  - redis.yaml
+  - seed-job.yaml
+images:
+  # Resources added in this overlay (seed-job) need the mapping too.
+  - name: acme-backend
+    newName: ghcr.io/likhithv02/customer-support-agent-backend
+    newTag: latest
+secretGenerator:
+  - name: acme-backend-secrets
+    literals:
+      - DATABASE_URL=postgresql://acme:acme@postgres:5432/acme
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET=dev-only-secret-for-kind-0123456789abcdef
+  - name: postgres-credentials
+    literals:
+      - POSTGRES_USER=acme
+      - POSTGRES_PASSWORD=acme
+      - POSTGRES_DB=acme
+generatorOptions:
+  disableNameSuffixHash: true
+patches:
+  - target: { kind: ConfigMap, name: acme-backend-config }
+    patch: |-
+      - op: replace
+        path: /data/ENV
+        value: dev
+      - op: replace
+        path: /data/AUTH_MODE
+        value: dev
+      - op: replace
+        path: /data/LLM_PROVIDER
+        value: fake
+      - op: add
+        path: /data/SEED_ON_STARTUP
+        value: "false"
+      - op: add
+        path: /data/FAKE_LLM_LATENCY_MS
+        value: "1500"
+  - target: { kind: Deployment, name: acme-backend }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 250m
+  - target: { kind: HorizontalPodAutoscaler, name: acme-backend }
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+      - op: replace
+        path: /spec/maxReplicas
+        value: 6
+  - target: { kind: Deployment, name: acme-frontend }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target: { kind: Ingress, name: acme-support }
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: acme.localtest.me

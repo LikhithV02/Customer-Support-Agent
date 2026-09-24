@@ -15,18 +15,37 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from app.agent.llm import get_chat_model, get_fallback_model
-from app.agent.tools import ToolContext, build_tools
+from app.agent.tools import TOOLS
 
 
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
 
 
-def build_agent(ctx: ToolContext):
+# One compiled graph per (model, fallback) pair — i.e. one per process in
+# production. Compiling per request was a major CPU cost under load.
+_cache: tuple | None = None
+
+
+def get_agent():
+    """Return the compiled agent graph for the current model, building it once.
+
+    Per-request state (the verified customer) is passed at invoke time via
+    `config["configurable"]["tool_ctx"]` — see `app.agent.tools.tool_config`.
+    """
+    global _cache
     model = get_chat_model()
-    tools = build_tools(ctx)
-    model_with_tools = model.bind_tools(tools)
     fallback = get_fallback_model()
+    if _cache is not None and _cache[0] is model and _cache[1] is fallback:
+        return _cache[2]
+    agent = _compile(model, fallback)
+    _cache = (model, fallback, agent)
+    return agent
+
+
+def _compile(model, fallback):
+    tools = TOOLS
+    model_with_tools = model.bind_tools(tools)
     if fallback is not None:
         # Tools must be bound on each model before composing fallbacks.
         model_with_tools = model_with_tools.with_fallbacks([fallback.bind_tools(tools)])

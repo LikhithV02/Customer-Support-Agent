@@ -3,6 +3,7 @@
 import asyncio
 from logging.config import fileConfig
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
@@ -32,7 +33,25 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# Arbitrary constant: every migrator takes the same Postgres advisory lock, so
+# when N backend pods start at once (each runs `alembic upgrade head` in an
+# initContainer) they migrate one at a time and the rest see "already at head".
+_MIGRATION_LOCK_ID = 7_263_510_001
+
+
 def _do_run(connection) -> None:
+    if connection.dialect.name == "postgresql":
+        connection.execute(text(f"SELECT pg_advisory_lock({_MIGRATION_LOCK_ID})"))
+        connection.commit()
+    try:
+        _migrate(connection)
+    finally:
+        if connection.dialect.name == "postgresql":
+            connection.execute(text(f"SELECT pg_advisory_unlock({_MIGRATION_LOCK_ID})"))
+            connection.commit()
+
+
+def _migrate(connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,

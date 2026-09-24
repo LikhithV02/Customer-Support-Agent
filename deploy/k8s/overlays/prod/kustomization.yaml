@@ -1,0 +1,27 @@
+# Production:
+#   1. Create the `acme-backend-secrets` Secret (see base/secret.example.yaml),
+#      pointing at managed Postgres + Redis.
+#   2. Set the image tags and host below.
+#   3. kubectl apply -k deploy/k8s/overlays/prod
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: acme
+resources:
+  - namespace.yaml
+  - ../../base
+images:
+  - name: ghcr.io/likhithv02/customer-support-agent-backend
+    newTag: latest # pin to an immutable tag or digest per release
+  - name: ghcr.io/likhithv02/customer-support-agent-frontend
+    newTag: latest
+patches:
+  - target: { kind: Ingress, name: acme-support }
+    patch: |-
+      - op: add
+        path: /metadata/annotations/cert-manager.io~1cluster-issuer
+        value: letsencrypt
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts: [support.example.com]
+            secretName: acme-support-tls

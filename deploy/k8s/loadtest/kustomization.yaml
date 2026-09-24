@@ -1,0 +1,31 @@
+# Distributed Locust in the cluster, targeting the backend Service directly
+# (or set LOCUST_HOST to the staging Ingress URL to include the ingress).
+#
+#   kubectl apply -k deploy/k8s/loadtest            # into acme-dev by default
+#   kubectl -n acme-dev scale deploy/locust-worker --replicas=10
+#   kubectl -n acme-dev port-forward svc/locust-master 8089   # web UI
+#
+# Never point this at production. See docs/LOADTESTING.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: acme-dev
+resources:
+  - seed-synthetic-job.yaml
+  - locust.yaml
+configMapGenerator:
+  - name: locust-config
+    literals:
+      - LOCUST_HOST=http://acme-backend:8000
+      - LT_CUSTOMERS=10000
+      - LT_WORKERS=10
+      - LT_SCALE=1
+      - LOAD_SHAPE=
+generatorOptions:
+  disableNameSuffixHash: true
+images:
+  - name: acme-backend
+    newName: ghcr.io/likhithv02/customer-support-agent-backend
+    newTag: latest
+  - name: acme-loadtest
+    newName: ghcr.io/likhithv02/customer-support-agent-loadtest
+    newTag: latest

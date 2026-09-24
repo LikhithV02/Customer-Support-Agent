@@ -1,0 +1,10 @@
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = ["E501"]
+
+[lint.isort]
+# Local modules must import after locust so gevent monkey-patching runs first.
+known-first-party = ["common", "slo", "shapes"]

@@ -1,4 +1,5 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import DevIdentity from "./components/DevIdentity";
 import Admin from "./pages/Admin";
 import Chat from "./pages/Chat";
 
@@ -33,6 +34,7 @@ export default function App() {
           </div>
         </div>
         <nav className="flex items-center gap-1">
+          <DevIdentity />
           <NavTab to="/chat" label="Customer Chat" />
           <NavTab to="/admin" label="Admin Dashboard" />
         </nav>

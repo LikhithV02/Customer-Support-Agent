@@ -19,7 +19,7 @@ import uuid
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-_ORDER_RE = re.compile(r"\bORD-[A-Z0-9-]+\b", re.I)
+_ORDER_RE = re.compile(r"\b[A-Z]{2,4}-\d{3,}(?:-[A-Z0-9]+)?\b", re.I)
 _REFUND_RE = re.compile(r"\b(refund|return|money back)\b", re.I)
 _ORDERS_RE = re.compile(r"\b(orders?|purchases?|bought)\b", re.I)
 

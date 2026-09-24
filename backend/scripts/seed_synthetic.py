@@ -13,6 +13,11 @@ Customer ids are LT-000001 … and each has these orders:
     LT-000001-D  outside the return window
     LT-000001-E  already refunded
 Idempotent: existing LT- customers are skipped.
+
+    python -m scripts.seed_synthetic --reset
+
+wipes all conversations/messages/events/refunds and restores the synthetic
+orders' `refunded` flags, so every load test starts from the same state.
 """
 
 from __future__ import annotations
@@ -23,10 +28,10 @@ import random
 from datetime import timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 
 from app.db import session as db
-from app.db.models import Customer, Order, utcnow
+from app.db.models import Conversation, Customer, Message, Order, ReasoningEvent, Refund, utcnow
 
 KINDS = "ABCDE"
 
@@ -81,11 +86,31 @@ async def generate(n: int, batch: int = 1000, seed: int = 42) -> int:
     return created
 
 
+async def reset() -> None:
+    async with db.SessionLocal() as session:
+        for model in (ReasoningEvent, Message, Refund, Conversation):
+            await session.execute(delete(model))
+        await session.execute(
+            update(Order).where(Order.id.like("LT-%-A")).values(refunded=False)
+        )
+        await session.commit()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--customers", type=int, default=10_000)
+    parser.add_argument("--reset", action="store_true", help="wipe chat/refund state first")
     args = parser.parse_args()
-    created = asyncio.run(generate(args.customers))
+
+    async def run() -> int:
+        if args.reset:
+            await reset()
+            print("seed_synthetic: reset conversations, refunds and refunded flags")
+        created = await generate(args.customers)
+        await db.dispose()
+        return created
+
+    created = asyncio.run(run())
     print(f"seed_synthetic: created {created} customers ({args.customers} total requested)")
 
 
