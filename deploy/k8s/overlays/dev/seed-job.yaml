@@ -1,0 +1,24 @@
+# Loads the demo fixture once the backend's initContainer has migrated the
+# schema (retries until the tables exist).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: acme-seed-demo
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: seed
+          image: acme-backend
+          command: ["python", "-m", "app.db.seed"]
+          envFrom:
+            - configMapRef:
+                name: acme-backend-config
+            - secretRef:
+                name: acme-backend-secrets

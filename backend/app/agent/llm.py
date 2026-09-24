@@ -1,15 +1,24 @@
 """Provider-agnostic chat model factory.
 
-Returns a LangChain chat model for the configured provider. Both models support
-`bind_tools`, so the LangGraph agent is identical regardless of provider.
+Returns a LangChain chat model for the configured provider. Clients are cached
+per process so HTTP connections to the provider are pooled and reused across
+requests, with explicit timeouts and retries.
+
+`LLM_PROVIDER=fake` returns a scripted tool-calling model with realistic
+latency — used by load tests so they exercise our infrastructure without
+spending tokens (see `app/agent/llm_fake.py`).
 """
+
+from __future__ import annotations
+
+from functools import lru_cache
 
 from app.config import get_settings
 
 
-def get_chat_model():
+def _build(provider: str):
     settings = get_settings()
-    provider = settings.llm_provider.lower()
+    provider = provider.lower()
 
     if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
@@ -23,6 +32,8 @@ def get_chat_model():
             api_key=settings.anthropic_api_key,
             temperature=0,
             max_tokens=settings.max_output_tokens,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
         )
 
     if provider == "openai":
@@ -35,8 +46,44 @@ def get_chat_model():
             api_key=settings.openai_api_key,
             temperature=0,
             max_tokens=settings.max_output_tokens,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+        )
+
+    if provider == "fake":
+        from app.agent.llm_fake import ScriptedFakeChatModel
+
+        return ScriptedFakeChatModel(
+            latency_ms=settings.fake_llm_latency_ms,
+            error_rate=settings.fake_llm_error_rate,
         )
 
     raise RuntimeError(
-        f"Unknown LLM_PROVIDER '{settings.llm_provider}'. Use 'anthropic' or 'openai'."
+        f"Unknown LLM provider '{provider}'. Use 'anthropic', 'openai' or 'fake'."
     )
+
+
+@lru_cache
+def get_chat_model():
+    return _build(get_settings().llm_provider)
+
+
+@lru_cache
+def get_fallback_model():
+    """Secondary provider used when the primary fails, or None."""
+    settings = get_settings()
+    fallback = settings.llm_fallback_provider
+    if not fallback or fallback == settings.llm_provider:
+        return None
+    return _build(fallback)
+
+
+def use_prompt_caching() -> bool:
+    """Anthropic prompt caching on the system prompt (and, by prefix, the tools).
+
+    Disabled when a fallback provider is configured, because the same message
+    list is replayed to the fallback and other providers reject Anthropic's
+    `cache_control` content-block field.
+    """
+    settings = get_settings()
+    return settings.llm_provider == "anthropic" and not settings.llm_fallback_provider

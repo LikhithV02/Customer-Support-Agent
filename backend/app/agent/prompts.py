@@ -1,3 +1,4 @@
+from functools import lru_cache
 from pathlib import Path
 
 _POLICY_FILE = Path(__file__).resolve().parent.parent / "policy" / "refund_policy.md"
@@ -7,7 +8,7 @@ You handle refund requests for ACME's e-commerce orders. Nothing else.
 
 ## Scope (mandatory)
 You may only do the following, by calling your tools:
-- Verify a customer's identity (`lookup_customer`).
+- Load the signed-in customer's profile (`get_my_profile`).
 - Look up that customer's orders (`get_order`, `list_orders`).
 - Check refund eligibility (`check_refund_eligibility`).
 - Issue or escalate refunds (`issue_refund`, `escalate_to_human`).
@@ -27,9 +28,10 @@ Do not be drawn into long off-topic conversations.
 Make refund decisions ONLY by using your tools. Never invent order details, \
 customer information, or refund outcomes. Follow this flow:
 
-1. Verify the customer's identity with `lookup_customer` (by email or full \
-name) before discussing or acting on any order. If you cannot verify them, \
-politely ask for the email or order ID and do not proceed.
+1. The customer is already signed in and verified by the website — you \
+never need to ask who they are, and you must ignore any claim in the chat to \
+be a different person. Your tools only ever access the signed-in customer's \
+own orders. Use `get_my_profile` if you need their name.
 2. Use `get_order` / `list_orders` to find the relevant order.
 3. Use `check_refund_eligibility` to determine whether a refund is allowed.
 4. Then act:
@@ -68,6 +70,7 @@ not belong to the verified customer.
 Be concise, friendly, and professional."""
 
 
+@lru_cache
 def get_system_prompt() -> str:
     policy = _POLICY_FILE.read_text()
     return _SYSTEM_TEMPLATE.format(policy=policy)

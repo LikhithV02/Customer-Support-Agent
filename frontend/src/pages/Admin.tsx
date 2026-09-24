@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import {
   fetchConversation,
   fetchConversations,
+  friendlyError,
   subscribeToConversation,
 } from "../api";
+import { getToken, onTokenChange } from "../auth";
 import ReasoningTimeline from "../components/ReasoningTimeline";
 import Markdown from "../components/Markdown";
 import type {
@@ -18,29 +20,37 @@ export default function Admin() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [live, setLive] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hasToken, setHasToken] = useState(Boolean(getToken("admin")));
   const timelineRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => onTokenChange(() => setHasToken(Boolean(getToken("admin")))), []);
 
   async function loadList() {
     try {
       setConversations(await fetchConversations());
-    } catch {
-      /* ignore transient errors */
+      setError(null);
+    } catch (err) {
+      setError(friendlyError(err));
     }
   }
 
   useEffect(() => {
+    if (!hasToken) return;
     loadList();
-    const t = setInterval(loadList, 4000);
+    const t = setInterval(loadList, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [hasToken]);
 
   useEffect(() => {
     if (!selectedId) return;
     let active = true;
     setLive(false);
-    fetchConversation(selectedId).then((d) => {
-      if (active) setDetail(d);
-    });
+    fetchConversation(selectedId)
+      .then((d) => {
+        if (active) setDetail(d);
+      })
+      .catch((err) => setError(friendlyError(err)));
 
     const handle = (event: AgentEvent) => {
       setLive(true);
@@ -81,6 +91,14 @@ export default function Admin() {
     timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight });
   }, [detail?.events]);
 
+  if (!hasToken) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-slate-500">
+        Admin sign-in required. (Local dev: toggle “Admin” in the DEV menu above.)
+      </div>
+    );
+  }
+
   return (
     <div className="grid h-full grid-cols-[300px_1fr]">
       <aside className="flex flex-col border-r border-slate-800 bg-slate-900/40">
@@ -88,6 +106,7 @@ export default function Admin() {
           Conversations
         </div>
         <div className="flex-1 overflow-y-auto">
+          {error && <p className="p-4 text-xs text-rose-300">{error}</p>}
           {conversations.length === 0 && (
             <p className="p-4 text-sm text-slate-500">
               No conversations yet. Start one in the Customer Chat tab.

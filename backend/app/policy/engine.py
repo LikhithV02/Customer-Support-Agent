@@ -60,13 +60,14 @@ def evaluate(order, customer=None, now: datetime | None = None) -> PolicyResult:
     settings = get_settings()
     now = _now(now)
     reasons: list[str] = []
+    amount = float(order.amount)  # Numeric → float for arithmetic and JSON
 
     # Rule 5 (identity/ownership): the order must belong to the requester.
     if customer is not None and order.customer_id != customer.id:
         reasons.append(
             f"Order {order.id} does not belong to the requesting customer."
         )
-        return PolicyResult(False, False, reasons, order.amount)
+        return PolicyResult(False, False, reasons, amount)
 
     # The item must actually have been delivered before it can be returned.
     delivered = _as_aware(order.delivered_date)
@@ -75,12 +76,12 @@ def evaluate(order, customer=None, now: datetime | None = None) -> PolicyResult:
             f"Order {order.id} has not been delivered yet, so it is not eligible "
             "for a refund."
         )
-        return PolicyResult(False, False, reasons, order.amount)
+        return PolicyResult(False, False, reasons, amount)
 
     # Rule 4: already refunded.
     if order.refunded:
         reasons.append(f"Order {order.id} has already been refunded.")
-        return PolicyResult(False, False, reasons, order.amount)
+        return PolicyResult(False, False, reasons, amount)
 
     # Rule 1: final-sale items are never refundable.
     if order.is_final_sale:
@@ -88,7 +89,7 @@ def evaluate(order, customer=None, now: datetime | None = None) -> PolicyResult:
             f"'{order.product_name}' was a final-sale item and is non-refundable "
             "under any circumstances."
         )
-        return PolicyResult(False, False, reasons, order.amount)
+        return PolicyResult(False, False, reasons, amount)
 
     # Rule 3: return window.
     age_days = (now - delivered).days
@@ -97,19 +98,19 @@ def evaluate(order, customer=None, now: datetime | None = None) -> PolicyResult:
             f"Order {order.id} was delivered {age_days} days ago, outside the "
             f"{settings.return_window_days}-day return window."
         )
-        return PolicyResult(False, False, reasons, order.amount)
+        return PolicyResult(False, False, reasons, amount)
 
     # Rule 2: high-value refunds require a human.
-    if order.amount > settings.escalation_threshold:
+    if amount > settings.escalation_threshold:
         reasons.append(
-            f"Refund amount ${order.amount:.2f} exceeds the "
+            f"Refund amount ${amount:.2f} exceeds the "
             f"${settings.escalation_threshold:.0f} limit and requires human "
             "escalation."
         )
-        return PolicyResult(True, True, reasons, order.amount)
+        return PolicyResult(True, True, reasons, amount)
 
     reasons.append(
         f"Order {order.id} is within the {settings.return_window_days}-day window, "
         "is not final sale, and is below the escalation threshold."
     )
-    return PolicyResult(True, False, reasons, order.amount)
+    return PolicyResult(True, False, reasons, amount)

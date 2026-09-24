@@ -1,5 +1,7 @@
 # Verification Report
 
+> **Note:** this is the record of the original single-instance verification. Since then, customer identity comes from a signed JWT (the agent no longer asks for an email, and `lookup_customer` was replaced by `get_my_profile`), and storage moved to Postgres + Redis. The same edge cases are now also exercised automatically under load — see [LOADTESTING.md](LOADTESTING.md).
+
 This document records every verification step taken for the ACME AI Refund
 Support Agent, the results, the edge-case coverage, and the fixes made along the
 way. It maps directly to the verification checklist in the implementation plan.
@@ -161,11 +163,12 @@ Every policy branch is covered by at least one automated test **and** a live run
   graph is provider-agnostic (`bind_tools` works identically). To verify a full
   OpenAI run: set `LLM_PROVIDER=openai` and `OPENAI_API_KEY=...` in `.env`, then
   `docker compose up`.
-- **Single backend worker.** The live admin SSE stream uses an in-process
-  broadcaster, so the backend runs one uvicorn worker (sufficient for the demo; a
-  multi-worker deployment would move the broadcaster to Redis pub/sub).
-- **Local DB volume persistence.** Verification left data (and some refunded
-  orders) in the `backend_data` volume. Reset with `docker compose down -v &&
+- ~~**Single backend worker.**~~ Resolved: the broadcaster, rate limits and
+  locks now live in Redis and the backend scales horizontally — see
+  [PRODUCTION.md](PRODUCTION.md) and the load-test results in
+  [LOADTESTING.md](LOADTESTING.md).
+- **Local DB volume persistence.** Verification leaves data (and some refunded
+  orders) in the `pg_data` volume. Reset with `docker compose down -v &&
   docker compose up` for a clean seed. A fresh checkout always starts clean.
 
 ---

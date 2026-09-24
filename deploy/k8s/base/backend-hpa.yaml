@@ -1,0 +1,39 @@
+# Scale on CPU: the load test (docs/LOADTESTING.md) shows the backend is
+# CPU-bound per turn, so CPU tracks in-flight work closely. For LLM-latency-
+# dominated traffic, a custom metric on `agent_turns_in_flight` (via
+# prometheus-adapter) is a better signal — see docs/PRODUCTION.md.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: acme-backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: acme-backend
+  minReplicas: 3
+  maxReplicas: 30
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 4
+          periodSeconds: 30
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 20
+          periodSeconds: 60

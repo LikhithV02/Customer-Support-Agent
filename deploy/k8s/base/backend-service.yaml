@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: acme-backend
+  labels:
+    app.kubernetes.io/name: acme-backend
+spec:
+  selector:
+    app.kubernetes.io/name: acme-backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

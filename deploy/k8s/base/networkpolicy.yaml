@@ -1,0 +1,19 @@
+# Only the ingress controller (and in-namespace pods such as Prometheus
+# scrapers you label accordingly) may reach the backend.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: acme-backend-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: acme-backend
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector: {}
+      ports:
+        - port: 8000
