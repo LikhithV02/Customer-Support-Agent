@@ -1,0 +1,50 @@
+name: Deploy backend (Cloud Run)
+
+# Deploys the public-demo backend on every push to main that touches it.
+# Inert until the GCP_* repository variables exist (see docs/DEPLOY.md), so
+# forks and unconfigured clones stay green.
+on:
+  push:
+    branches: [main]
+    paths: [backend/**, deploy/cloudrun/**, .github/workflows/deploy-cloudrun.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # Workload Identity Federation: no long-lived GCP keys
+
+concurrency:
+  group: deploy-cloudrun
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.GCP_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: demo
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+      CORS_ORIGINS: ${{ vars.DEMO_CORS_ORIGINS }}
+      DEMO_GLOBAL_DAILY_TOKEN_BUDGET: ${{ vars.DEMO_GLOBAL_DAILY_TOKEN_BUDGET || '1500000' }}
+      TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Build and push image
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/acme/backend:${TAG}"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE" backend
+          docker push "$IMAGE"
+      - id: deploy
+        name: Migrate and roll out
+        env:
+          SKIP_BUILD: "1"
+        run: ./deploy/cloudrun/deploy.sh

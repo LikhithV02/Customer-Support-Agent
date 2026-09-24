@@ -1,5 +1,9 @@
 # ACME — AI Customer Support Agent (Refund Automation)
 
+**[Live demo](https://likhithv02.github.io/Customer-Support-Agent/)** ·
+[How it's deployed](docs/DEPLOY.md) · [Production guide](docs/PRODUCTION.md) ·
+[Load testing](docs/LOADTESTING.md)
+
 An end-to-end, fully containerized AI customer-support agent that **approves,
 denies, or escalates e-commerce refunds**. A signed-in customer chats with the
 agent; the agent looks up their order, checks it against a strict refund policy,
@@ -15,6 +19,13 @@ pods, Kubernetes manifests with autoscaling, Prometheus metrics, and a Locust
 load simulation of thousands of concurrent users that checks both latency SLOs
 and refund correctness. See [docs/PRODUCTION.md](docs/PRODUCTION.md) and
 [docs/LOADTESTING.md](docs/LOADTESTING.md).
+
+**Public demo mode:** `AUTH_MODE=demo` gives every visitor a private sandbox
+customer (one order per refund-policy branch) plus a scoped admin token for the
+agent console, with per-IP and token-budget limits. When the budget runs out, turns
+fall back to the scripted model. It's deployed as a GitHub Pages landing page,
+a Vercel UI and a Cloud Run backend (Neon Postgres, Upstash Redis). See
+[docs/DEPLOY.md](docs/DEPLOY.md).
 
 ---
 
@@ -34,7 +45,7 @@ docker compose up --build
 Then open **http://localhost:3000**.
 
 - Customer chat: http://localhost:3000/chat
-- Admin dashboard: http://localhost:3000/admin
+- Agent console (admin): http://localhost:3000/console
 
 Compose starts Postgres, Redis, a one-shot migration + seed job, the backend and
 the frontend. The mock CRM database (15 customers, 20 orders) is seeded

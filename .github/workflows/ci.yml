@@ -74,6 +74,86 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: Build for a separate API origin (Vercel + Cloud Run layout)
+        env:
+          VITE_API_BASE_URL: https://api.example.test
+        run: |
+          npx vite build --outDir dist-cross-origin
+          grep -rq "https://api.example.test" dist-cross-origin/assets
+
+  landing:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: landing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Assets resolve under the GitHub Pages base path
+        run: grep -q '/Customer-Support-Agent/assets/' dist/index.html
+
+  demo-container:
+    # The backend image exactly as Cloud Run runs it: $PORT, ENV=prod,
+    # AUTH_MODE=demo, plus a cross-origin CORS preflight from the UI's origin.
+    runs-on: ubuntu-latest
+    needs: [backend]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t backend:ci backend
+      - name: Migrate and start (Cloud Run settings)
+        run: |
+          cat > demo.env <<'ENV'
+          ENV=prod
+          AUTH_MODE=demo
+          PORT=8080
+          JWT_SECRET=ci-demo-secret-0123456789abcdef0123456789
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/app?sslmode=disable
+          REDIS_URL=redis://localhost:6379/0
+          LLM_PROVIDER=fake
+          FAKE_LLM_LATENCY_MS=50
+          TRUSTED_PROXY_HOPS=1
+          CORS_ORIGINS=https://demo-ui.example.test
+          ENV
+          docker run --rm --network host --env-file demo.env backend:ci alembic upgrade head
+          docker run -d --name api --network host --env-file demo.env backend:ci
+          for i in $(seq 1 30); do curl -sf localhost:8080/api/health/ready && break; sleep 1; done
+      - name: Smoke the demo flow
+        run: |
+          set -euo pipefail
+          curl -sf localhost:8080/api/meta | grep -q '"auth_mode":"demo"'
+          curl -sf -o /dev/null -D - -X OPTIONS localhost:8080/api/chat \
+            -H "Origin: https://demo-ui.example.test" -H "Access-Control-Request-Method: POST" \
+            -H "Access-Control-Request-Headers: authorization,content-type" \
+            | grep -qi "access-control-allow-origin: https://demo-ui.example.test"
+          session=$(curl -sf -X POST localhost:8080/api/demo/session)
+          token=$(echo "$session" | python -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          order=$(echo "$session" | python -c 'import json,sys; print(json.load(sys.stdin)["orders"][0]["id"])')
+          curl -sfN -X POST localhost:8080/api/chat -H "Authorization: Bearer $token" \
+            -H "Content-Type: application/json" -d "{\"message\": \"Refund order $order\"}" > turn.txt
+          grep -q '"decision": "approved"' turn.txt
+          grep -q '"kind": "done"' turn.txt
+      - if: failure()
+        run: docker logs api
 
   k8s-manifests:
     runs-on: ubuntu-latest
@@ -162,7 +242,7 @@ jobs:
 
   images:
     runs-on: ubuntu-latest
-    needs: [backend, frontend, k8s-manifests]
+    needs: [backend, frontend, landing, demo-container, k8s-manifests]
     permissions:
       contents: read
       packages: write

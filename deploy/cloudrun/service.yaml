@@ -1,0 +1,67 @@
+# Cloud Run service for the public demo backend.
+# Rendered with envsubst by .github/workflows/deploy-cloudrun.yml (or
+# `./deploy.sh`), then applied with `gcloud run services replace`.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: ${SERVICE}
+  labels:
+    app: acme-support
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # Scale to zero when idle (free); set minScale to "1" (~$10/month)
+        # to remove the cold start. maxScale caps both load and spend.
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "3"
+        run.googleapis.com/startup-cpu-boost: "true"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: ${RUNTIME_SA}
+      # One SSE chat turn stays open for its whole duration (max TURN_TIMEOUT_S);
+      # admin live streams reconnect on their own.
+      timeoutSeconds: 3600
+      containerConcurrency: 80
+      containers:
+        - image: ${IMAGE}
+          ports:
+            - name: http1
+              containerPort: 8080
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          env:
+            - { name: ENV, value: prod }
+            - { name: AUTH_MODE, value: demo }
+            - { name: LLM_PROVIDER, value: anthropic }
+            # Provider errors fall back to the scripted model, so the demo never breaks.
+            - { name: LLM_FALLBACK_PROVIDER, value: fake }
+            - { name: FAKE_LLM_LATENCY_MS, value: "400" }
+            - { name: CORS_ORIGINS, value: "${CORS_ORIGINS}" }
+            # Cloud Run's front end appends the real client IP to X-Forwarded-For.
+            - { name: TRUSTED_PROXY_HOPS, value: "1" }
+            # Neon's free tier allows ~100 connections: 3 instances × (5 + 5).
+            - { name: DB_POOL_SIZE, value: "5" }
+            - { name: DB_MAX_OVERFLOW, value: "5" }
+            # Cost controls (see docs/DEPLOY.md → Costs).
+            - { name: MAX_CONCURRENT_TURNS, value: "20" }
+            - { name: CHAT_RATE_LIMIT, value: "8/minute" }
+            - { name: CUSTOMER_DAILY_TOKEN_BUDGET, value: "40000" }
+            - { name: DEMO_GLOBAL_DAILY_TOKEN_BUDGET, value: "${DEMO_GLOBAL_DAILY_TOKEN_BUDGET}" }
+            - { name: DEMO_SESSION_RATE_LIMIT, value: "5/hour" }
+            - { name: MAX_CONVERSATION_TURNS, value: "20" }
+            - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: acme-jwt-secret, key: latest } } }
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: acme-database-url, key: latest } } }
+            - { name: REDIS_URL, valueFrom: { secretKeyRef: { name: acme-redis-url, key: latest } } }
+            - { name: ANTHROPIC_API_KEY, valueFrom: { secretKeyRef: { name: acme-anthropic-api-key, key: latest } } }
+          startupProbe:
+            httpGet: { path: /api/health/live }
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /api/health/live }
+            periodSeconds: 30

@@ -7,4 +7,8 @@ __pycache__/
 backend/var/
 frontend/node_modules/
 frontend/dist/
+frontend/dist-cross-origin/
+landing/node_modules/
+landing/dist/
 loadtest/results/
+dump.rdb
