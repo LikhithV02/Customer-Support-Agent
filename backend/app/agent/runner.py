@@ -17,7 +17,9 @@ connection pool is not consumed by idle, long-running streams.
 Guardrails enforced here (see `docs/HARDENING.md`):
 - A per-conversation **token budget** (`max_conversation_tokens`) and a
   per-customer **daily** budget (`customer_daily_token_budget`): once exceeded,
-  the next turn short-circuits with a polite refusal — no model call.
+  the next turn short-circuits with a polite refusal — no model call. In the
+  public demo (`AUTH_MODE=demo`) the turn instead runs on the scripted model,
+  as it does once the demo-wide daily budget is spent.
 - The LangGraph **recursion limit** (`agent_recursion_limit`) bounds the
   tool-call loop, and `turn_timeout_s` bounds wall-clock time.
 - An **output sanitizer**: if the assistant's final message claims a refund was
@@ -256,13 +258,31 @@ async def run_agent_turn(
         INJECTION_FLAGS.inc()
         yield await emit("injection_flag", "guard", {"patterns": flags, "text": user_text})
 
-    # Token budgets. Refuse before any LLM call.
+    # Token budgets. Checked before any LLM call.
     prior_tokens = convo.tokens_used or 0
     today_tokens = await shared.customer_tokens_today(customer_id)
-    if (
+    over_budget = (
         prior_tokens >= settings.max_conversation_tokens
         or today_tokens >= settings.customer_daily_token_budget
-    ):
+    )
+    scripted = False
+    if settings.is_demo:
+        # The public demo never refuses for cost reasons: once a visitor (or
+        # the whole demo, for the day) has spent its budget, turns continue on
+        # the scripted model at zero cost.
+        global_cap = settings.demo_global_daily_token_budget
+        if over_budget or (global_cap and await shared.global_tokens_today() >= global_cap):
+            scripted = True
+            yield await emit(
+                "notice",
+                "guard",
+                {
+                    "reason": "demo_budget",
+                    "message": "The demo's LLM budget is used up for now, so this "
+                    "reply comes from the scripted model. The guardrails are identical.",
+                },
+            )
+    elif over_budget:
         yield await emit(
             "budget_exhausted",
             "guard",
@@ -278,7 +298,7 @@ async def run_agent_turn(
         return
 
     ctx = ToolContext(conversation_id=cid, verified_customer_id=customer_id)
-    agent = get_agent()
+    agent = get_agent(scripted=scripted)
 
     # History already includes the user message we just saved.
     messages = [_system_message()] + await _history(cid)
@@ -317,7 +337,7 @@ async def run_agent_turn(
                                     {"tool": call["name"], "args": call.get("args", {})},
                                 )
                             # Record token usage for budget tracking.
-                            if usage:
+                            if usage and not scripted:
                                 tin = int(usage.get("input_tokens", 0))
                                 tout = int(usage.get("output_tokens", 0))
                                 LLM_TOKENS.labels("input").inc(tin)

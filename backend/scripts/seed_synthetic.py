@@ -25,45 +25,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import random
-from datetime import timedelta
-from decimal import Decimal
 
 from sqlalchemy import delete, func, select, update
 
 from app.db import session as db
-from app.db.models import Conversation, Customer, Message, Order, ReasoningEvent, Refund, utcnow
-
-KINDS = "ABCDE"
+from app.db.fixtures import scenario_orders
+from app.db.models import Conversation, Customer, Message, Order, ReasoningEvent, Refund
 
 
 def customer_id(i: int) -> str:
     return f"LT-{i:06d}"
-
-
-def _orders(cid: str, rng: random.Random) -> list[Order]:
-    now = utcnow()
-
-    def mk(kind, amount, delivered_days, final=False, refunded=False, name="Widget"):
-        return Order(
-            id=f"{cid}-{kind}",
-            customer_id=cid,
-            product_name=name,
-            category="general",
-            amount=Decimal(str(amount)),
-            status="delivered",
-            order_date=now - timedelta(days=delivered_days + 3),
-            delivered_date=now - timedelta(days=delivered_days),
-            is_final_sale=final,
-            refunded=refunded,
-        )
-
-    return [
-        mk("A", round(rng.uniform(20, 400), 2), rng.randint(1, 20), name="Bluetooth Speaker"),
-        mk("B", round(rng.uniform(10, 80), 2), rng.randint(1, 20), final=True, name="Clearance Hoodie"),
-        mk("C", round(rng.uniform(600, 2000), 2), rng.randint(1, 20), name="Laptop"),
-        mk("D", round(rng.uniform(20, 300), 2), rng.randint(40, 90), name="Desk Lamp"),
-        mk("E", round(rng.uniform(20, 300), 2), rng.randint(1, 20), refunded=True, name="Keyboard"),
-    ]
 
 
 async def generate(n: int, batch: int = 1000, seed: int = 42) -> int:
@@ -80,7 +51,7 @@ async def generate(n: int, batch: int = 1000, seed: int = 42) -> int:
                 session.add(
                     Customer(id=cid, name=f"Load Tester {i}", email=f"lt{i}@load.test")
                 )
-                session.add_all(_orders(cid, rng))
+                session.add_all(scenario_orders(cid, rng))
                 created += 1
             await session.commit()
     return created

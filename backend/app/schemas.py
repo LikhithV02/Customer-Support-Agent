@@ -39,3 +39,24 @@ class ConversationDetail(BaseModel):
     customer_name: str | None
     messages: list[MessageOut]
     events: list[ReasoningEventOut]
+
+
+class OrderOut(BaseModel):
+    id: str
+    product_name: str
+    amount: float
+    status: str
+    order_date: datetime | None
+    delivered_date: datetime | None
+    is_final_sale: bool
+    refunded: bool
+    # Which refund-policy branch a demo/fixture order exercises, if any.
+    scenario: str | None = None
+
+
+class AdminStats(BaseModel):
+    conversations: int
+    messages: int
+    decisions: dict[str, int]
+    injection_flags: int
+    tokens_used: int

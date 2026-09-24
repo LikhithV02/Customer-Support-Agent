@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,10 +16,28 @@ def _async_db_url(url: str) -> str:
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://") :]
     if url.startswith("postgresql://"):
-        return "postgresql+asyncpg://" + url[len("postgresql://") :]
+        return _asyncpg_query("postgresql+asyncpg://" + url[len("postgresql://") :])
     if url.startswith("sqlite:///"):
         return "sqlite+aiosqlite:///" + url[len("sqlite:///") :]
     return url
+
+
+def _asyncpg_query(url: str) -> str:
+    """Translate libpq query params (as in Neon/Supabase URLs) for asyncpg.
+
+    asyncpg takes `ssl=` instead of `sslmode=` and rejects libpq-only options
+    such as `channel_binding`.
+    """
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    params = []
+    for key, value in parse_qsl(parts.query, keep_blank_values=True):
+        if key == "sslmode":
+            params.append(("ssl", value))
+        elif key not in ("channel_binding", "options"):
+            params.append((key, value))
+    return urlunsplit(parts._replace(query=urlencode(params)))
 
 
 class Settings(BaseSettings):
@@ -55,16 +74,31 @@ class Settings(BaseSettings):
     redis_url: str = ""
 
     # Auth (see docs/PRODUCTION.md). Tokens are issued by the host site.
-    auth_mode: str = "dev"  # "dev" | "jwt"
+    # "dev" (local token picker) | "jwt" (host site issues tokens) |
+    # "demo" (public sandbox: anonymous visitors get a throwaway customer).
+    auth_mode: str = "dev"
     jwt_secret: str = ""
     jwt_jwks_url: str = ""
     jwt_issuer: str = ""
     jwt_audience: str = ""
     dev_token_ttl_s: int = 8 * 3600
 
+    # Public demo (AUTH_MODE=demo, see docs/DEPLOY.md)
+    demo_session_rate_limit: str = "5/hour"  # new sandboxes per client IP
+    demo_token_ttl_s: int = 2 * 3600
+    demo_data_ttl_hours: int = 24  # sandbox customers are purged after this
+    # Daily token cap across *all* visitors (0 = no cap). Once reached, turns
+    # run on the scripted model instead of the real LLM.
+    demo_global_daily_token_budget: int = 0
+    # Optional Cloudflare Turnstile bot check on sandbox creation.
+    turnstile_secret: str = ""
+
     # HTTP
     cors_origins: str = ""  # comma-separated allowlist
     max_request_bytes: int = 16_384
+    # How many proxies in front of us append to X-Forwarded-For (Cloud Run: 1).
+    # Used for per-IP limits; 0 = use the socket peer address.
+    trusted_proxy_hops: int = 0
 
     # Refund policy knobs (kept here so policy engine and docs share one source)
     return_window_days: int = 30
@@ -94,10 +128,13 @@ class Settings(BaseSettings):
     def _check_prod(self) -> "Settings":
         if self.env == "prod":
             problems = []
-            if self.auth_mode != "jwt":
-                problems.append("AUTH_MODE must be 'jwt'")
+            if self.auth_mode not in ("jwt", "demo"):
+                problems.append("AUTH_MODE must be 'jwt' or 'demo'")
             if not (self.jwt_jwks_url or self.jwt_secret):
                 problems.append("JWT_SECRET or JWT_JWKS_URL is required")
+            if self.auth_mode == "demo" and (self.jwt_jwks_url or len(self.jwt_secret) < 32):
+                # The demo mints its own tokens, so it needs a strong HS256 secret.
+                problems.append("AUTH_MODE=demo needs JWT_SECRET (>= 32 chars) and no JWKS")
             if self.jwt_secret == DEV_JWT_SECRET:
                 problems.append("JWT_SECRET must not be the dev secret")
             if not self.redis_url:
@@ -116,11 +153,16 @@ class Settings(BaseSettings):
     def effective_jwt_secret(self) -> str:
         if self.jwt_secret:
             return self.jwt_secret
-        return DEV_JWT_SECRET if self.auth_mode == "dev" else ""
+        # Local dev/demo only; prod startup requires a real JWT_SECRET.
+        return DEV_JWT_SECRET if self.auth_mode in ("dev", "demo") else ""
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def is_demo(self) -> bool:
+        return self.auth_mode == "demo"
 
     @property
     def has_llm_key(self) -> bool:
