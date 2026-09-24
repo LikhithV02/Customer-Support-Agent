@@ -1,36 +1,42 @@
-"""In-process pub/sub for live reasoning events.
+"""Cross-pod pub/sub for live reasoning events (Redis pub/sub).
 
 The chat endpoint runs the agent and, for each reasoning step, persists it and
 publishes it here. The admin dashboard subscribes per conversation and streams
-those events over SSE in real time. Single backend worker, so a simple in-memory
-broadcaster is sufficient (noted in the README).
+those events over SSE in real time. Because the channel lives in Redis, the
+admin can be connected to a different pod than the one running the turn.
 """
 
 from __future__ import annotations
 
-import asyncio
-from collections import defaultdict
+import json
+from collections.abc import AsyncIterator
+
+from app.redis import get_redis
+
+
+def _channel(conversation_id: str) -> str:
+    return f"conv:{conversation_id}"
 
 
 class Broadcaster:
-    def __init__(self) -> None:
-        self._subscribers: dict[str, set[asyncio.Queue]] = defaultdict(set)
+    async def publish(self, conversation_id: str, event: dict) -> None:
+        await get_redis().publish(_channel(conversation_id), json.dumps(event))
 
-    def subscribe(self, conversation_id: str) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
-        self._subscribers[conversation_id].add(queue)
-        return queue
-
-    def unsubscribe(self, conversation_id: str, queue: asyncio.Queue) -> None:
-        subs = self._subscribers.get(conversation_id)
-        if subs:
-            subs.discard(queue)
-            if not subs:
-                self._subscribers.pop(conversation_id, None)
-
-    def publish(self, conversation_id: str, event: dict) -> None:
-        for queue in list(self._subscribers.get(conversation_id, ())):
-            queue.put_nowait(event)
+    async def subscribe(self, conversation_id: str) -> AsyncIterator[dict]:
+        pubsub = get_redis().pubsub()
+        await pubsub.subscribe(_channel(conversation_id))
+        try:
+            while True:
+                msg = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=15.0
+                )
+                if msg is None:
+                    continue
+                if msg.get("type") == "message":
+                    yield json.loads(msg["data"])
+        finally:
+            await pubsub.unsubscribe(_channel(conversation_id))
+            await pubsub.aclose()
 
 
 broadcaster = Broadcaster()

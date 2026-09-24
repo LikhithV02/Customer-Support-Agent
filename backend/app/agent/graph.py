@@ -14,7 +14,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
-from app.agent.llm import get_chat_model
+from app.agent.llm import get_chat_model, get_fallback_model
 from app.agent.tools import ToolContext, build_tools
 
 
@@ -26,6 +26,10 @@ def build_agent(ctx: ToolContext):
     model = get_chat_model()
     tools = build_tools(ctx)
     model_with_tools = model.bind_tools(tools)
+    fallback = get_fallback_model()
+    if fallback is not None:
+        # Tools must be bound on each model before composing fallbacks.
+        model_with_tools = model_with_tools.with_fallbacks([fallback.bind_tools(tools)])
     tool_node = ToolNode(tools)
 
     async def agent_node(state: AgentState) -> dict:

@@ -1,119 +1,266 @@
-"""Tests for the hardening guardrails (input cap, turn cap, token budget,
-rate limit, recursion limit, output sanitizer, expanded injection guard).
-
-The TestClient tests share the app's default DB. Each test uses a fresh,
-unique conversation_id so state doesn't bleed between tests.
+"""Tests for the hardening guardrails (auth, ownership, input cap, turn cap,
+token budgets, rate limit, concurrency locks, back-pressure, recursion limit,
+output sanitizer, expanded injection guard).
 """
 
 from __future__ import annotations
 
 import json
-import uuid
 
-import pytest
-from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 from sqlalchemy import select
 
+from app import redis as shared
 from app.agent import graph as graph_module
-from app.agent import runner as runner_module
 from app.agent.guard import detect_injection
-from app.agent.runner import run_agent_turn
+from app.agent.runner import create_conversation, run_agent_turn
+from app.auth import mint_token
 from app.config import get_settings
-from app.db.models import Conversation, Message, ReasoningEvent, Refund
-from app.db.session import SessionLocal
-from app.main import app, limiter
+from app.db import session as db
+from app.db.models import Conversation, Message, Refund
+from tests.conftest import admin_auth, auth
 from tests.test_resilience import FakeModel  # reuse the scripted-model helper
 
 
-@pytest.fixture(autouse=True)
-def _reset_rate_limit():
-    """Slowapi keeps an in-process counter; clear it between tests."""
-    try:
-        limiter.reset()
-    except Exception:  # nosec - older slowapi exposes storage differently
-        pass
-    yield
-    try:
-        limiter.reset()
-    except Exception:
-        pass
+def _sse_events(body: str) -> list[dict]:
+    return [
+        json.loads(line[5:].strip())
+        for line in body.splitlines()
+        if line.startswith("data:") and line[5:].strip()
+    ]
 
 
-@pytest.fixture
-def client() -> TestClient:
-    with TestClient(app) as c:
-        yield c
+async def _approved_refunds() -> list:
+    async with db.SessionLocal() as s:
+        return (await s.scalars(select(Refund).where(Refund.decision == "approved"))).all()
 
 
-def _new_cid() -> str:
-    return f"conv-test-{uuid.uuid4().hex[:10]}"
+# ---------------------------------------------------------------------------
+# Authentication & authorisation
+# ---------------------------------------------------------------------------
+
+
+async def test_chat_requires_token(client):
+    res = await client.post("/api/chat", json={"message": "hi"})
+    assert res.status_code == 401
+
+
+async def test_chat_rejects_invalid_and_expired_tokens(client):
+    res = await client.post(
+        "/api/chat", json={"message": "hi"}, headers={"Authorization": "Bearer nope"}
+    )
+    assert res.status_code == 401
+    expired = mint_token("CUST-001", ttl_s=-10)
+    res = await client.post(
+        "/api/chat", json={"message": "hi"}, headers={"Authorization": f"Bearer {expired}"}
+    )
+    assert res.status_code == 401
+
+
+async def test_admin_endpoints_require_admin_role(client):
+    assert (await client.get("/api/conversations")).status_code == 401
+    assert (await client.get("/api/conversations", headers=auth("CUST-001"))).status_code == 403
+    res = await client.get("/api/conversations", headers=admin_auth())
+    assert res.status_code == 200
+
+
+async def test_admin_token_cannot_chat_as_customer(client):
+    res = await client.post("/api/chat", json={"message": "hi"}, headers=admin_auth())
+    assert res.status_code == 403
+
+
+async def test_cannot_continue_another_customers_conversation(client):
+    cid = await create_conversation("CUST-003")
+    res = await client.post(
+        "/api/chat",
+        json={"message": "refund ORD-1003", "conversation_id": cid},
+        headers=auth("CUST-001"),
+    )
+    assert res.status_code == 404
+    res = await client.get(f"/api/me/conversations/{cid}", headers=auth("CUST-001"))
+    assert res.status_code == 404
+
+
+async def test_unknown_conversation_id_is_not_created(client):
+    res = await client.post(
+        "/api/chat",
+        json={"message": "hi", "conversation_id": "conv-made-up"},
+        headers=auth("CUST-001"),
+    )
+    assert res.status_code == 404
+    async with db.SessionLocal() as s:
+        assert await s.get(Conversation, "conv-made-up") is None
+
+
+async def test_full_chat_turn_over_http(client, monkeypatch):
+    scripted = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "issue_refund", "args": {"order_id": "ORD-1001"}, "id": "1", "type": "tool_call"}
+            ],
+        ),
+        AIMessage(content="Your refund has been approved!"),
+    ]
+    monkeypatch.setattr(graph_module, "get_chat_model", lambda: FakeModel(scripted))
+    res = await client.post(
+        "/api/chat", json={"message": "refund ORD-1001 please"}, headers=auth("CUST-001")
+    )
+    assert res.status_code == 200
+    events = _sse_events(res.text)
+    cid = events[0]["conversation_id"]
+    assert events[-1] == {"kind": "done"}
+    seqs = [e["seq"] for e in events if e.get("kind") == "step"]
+    assert seqs == sorted(seqs) and len(seqs) == len(set(seqs))
+
+    # The customer can reload their own conversation.
+    res = await client.get(f"/api/me/conversations/{cid}", headers=auth("CUST-001"))
+    assert res.status_code == 200
+    assert [m["role"] for m in res.json()["messages"]] == ["user", "assistant"]
+
+    # And the admin sees it, with the customer name joined in.
+    listing = (await client.get("/api/conversations", headers=admin_auth())).json()
+    row = next(r for r in listing if r["id"] == cid)
+    assert row["customer_name"] == "Alice Johnson" and row["message_count"] == 2
 
 
 # ---------------------------------------------------------------------------
 # API-level caps
 # ---------------------------------------------------------------------------
 
-def test_message_length_cap_rejects_oversize(client):
+
+async def test_message_length_cap_rejects_oversize(client):
     settings = get_settings()
-    res = client.post(
-        "/api/chat", json={"message": "A" * (settings.max_message_chars + 1)}
+    res = await client.post(
+        "/api/chat",
+        json={"message": "A" * (settings.max_message_chars + 1)},
+        headers=auth("CUST-001"),
     )
     assert res.status_code == 400
     assert str(settings.max_message_chars) in res.json()["detail"]
 
 
-def test_turn_cap_rejects_after_threshold(client, monkeypatch):
+async def test_request_body_size_limit(client):
+    res = await client.post(
+        "/api/chat",
+        content=b"{" + b" " * (get_settings().max_request_bytes + 10) + b"}",
+        headers={"Content-Type": "application/json", **auth("CUST-001")},
+    )
+    assert res.status_code == 413
+
+
+async def test_turn_cap_rejects_after_threshold(client, monkeypatch):
     # Tighten the cap so we don't have to insert dozens of rows.
     monkeypatch.setattr(get_settings(), "max_conversation_turns", 4)
-    cid = _new_cid()
-    with SessionLocal() as s:
-        s.add(Conversation(id=cid))
+    cid = await create_conversation("CUST-001")
+    async with db.SessionLocal() as s:
         for i in range(4):
             s.add(Message(conversation_id=cid, role="user", content=f"prior {i}"))
-        s.commit()
+        await s.commit()
 
-    res = client.post(
-        "/api/chat", json={"message": "one more turn", "conversation_id": cid}
+    res = await client.post(
+        "/api/chat",
+        json={"message": "one more turn", "conversation_id": cid},
+        headers=auth("CUST-001"),
     )
     assert res.status_code == 429
     assert "message limit" in res.json()["detail"]
 
 
-def test_rate_limit_blocks_after_burst(client, monkeypatch):
+async def test_rate_limit_blocks_after_burst(client, monkeypatch):
     # Tighten the limit so the test is fast.
     monkeypatch.setattr(get_settings(), "chat_rate_limit", "3/minute")
 
     # Empty messages return 400 from the handler — no agent call, no LLM —
-    # but slowapi still increments the per-IP counter on every request, so the
-    # fourth one trips the limit before the handler body runs.
+    # but the limiter still counts every request, so the fourth one trips it.
     statuses = [
-        client.post("/api/chat", json={"message": ""}).status_code for _ in range(4)
+        (await client.post("/api/chat", json={"message": ""}, headers=auth("CUST-001"))).status_code
+        for _ in range(4)
     ]
     assert statuses[:3] == [400, 400, 400]
     assert statuses[3] == 429
+
+
+async def test_rate_limit_is_per_customer_not_global(client, monkeypatch):
+    # Behind a proxy every request shares one IP; keying on the token subject
+    # means one noisy customer can't exhaust everyone else's quota.
+    monkeypatch.setattr(get_settings(), "chat_rate_limit", "2/minute")
+    for _ in range(3):
+        await client.post("/api/chat", json={"message": ""}, headers=auth("CUST-001"))
+    res = await client.post("/api/chat", json={"message": ""}, headers=auth("CUST-002"))
+    assert res.status_code == 400  # handler ran → not rate-limited
+
+
+async def test_concurrent_turn_in_same_conversation_is_409(client):
+    cid = await create_conversation("CUST-001")
+    held = await shared.acquire_turn_lock(cid, 30)
+    assert held
+    res = await client.post(
+        "/api/chat",
+        json={"message": "refund ORD-1001", "conversation_id": cid},
+        headers=auth("CUST-001"),
+    )
+    assert res.status_code == 409
+
+
+async def test_global_backpressure_returns_503(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "max_concurrent_turns", 1)
+    assert await shared.acquire_turn_slot(1, 60)  # someone else's turn
+    res = await client.post("/api/chat", json={"message": "hello"}, headers=auth("CUST-001"))
+    assert res.status_code == 503
+    assert res.headers["retry-after"]
+
+
+async def test_turn_releases_lock_and_slot(client, monkeypatch):
+    monkeypatch.setattr(
+        graph_module, "get_chat_model", lambda: FakeModel([AIMessage(content="hi")])
+    )
+    res = await client.post("/api/chat", json={"message": "hello"}, headers=auth("CUST-001"))
+    cid = _sse_events(res.text)[0]["conversation_id"]
+    assert await shared.turns_in_flight() == 0
+    assert await shared.acquire_turn_lock(cid, 5)
+
+
+async def test_provider_error_is_not_leaked_to_client(client, monkeypatch):
+    class Boom:
+        def bind_tools(self, _tools):
+            return self
+
+        async def ainvoke(self, _messages):
+            raise RuntimeError("secret-internal-detail api_key=sk-123")
+
+    monkeypatch.setattr(graph_module, "get_chat_model", lambda: Boom())
+    res = await client.post("/api/chat", json={"message": "hello"}, headers=auth("CUST-001"))
+    assert "secret-internal-detail" not in res.text
+    assert any(e.get("kind") == "error" for e in _sse_events(res.text))
+
+
+async def test_dev_token_endpoint(client):
+    res = await client.post("/api/dev/token", json={"customer_id": "CUST-001"})
+    assert res.status_code == 200
+    token = res.json()["token"]
+    res = await client.get("/api/me/conversations", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 200
+    assert (await client.post("/api/dev/token", json={"customer_id": "nope"})).status_code == 404
+
+
+async def test_readiness_and_metrics(client):
+    assert (await client.get("/api/health/ready")).json()["ready"] is True
+    res = await client.get("/metrics")
+    assert res.status_code == 200 and "agent_turns_total" in res.text
 
 
 # ---------------------------------------------------------------------------
 # Token budget — short-circuits without calling the model
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_token_budget_short_circuits_turn(db_session, monkeypatch):
+async def test_token_budget_short_circuits_turn(engine, monkeypatch):
     monkeypatch.setattr(get_settings(), "max_conversation_tokens", 100)
-    cid = "conv-budget-test"
-    db_session.add(Conversation(id=cid))
+    cid = await create_conversation("CUST-001")
     # Spend 120 tokens of "prior usage" so the next turn must refuse.
-    db_session.add(
-        ReasoningEvent(
-            conversation_id=cid,
-            seq=1,
-            step_type="usage",
-            node="agent",
-            payload={"input_tokens": 80, "output_tokens": 40},
-        )
-    )
-    db_session.commit()
+    async with db.SessionLocal() as s:
+        (await s.get(Conversation, cid)).tokens_used = 120
+        await s.commit()
 
     # If the model gets called the test will fail loudly.
     class ExplodingModel:
@@ -126,7 +273,7 @@ async def test_token_budget_short_circuits_turn(db_session, monkeypatch):
     monkeypatch.setattr(graph_module, "get_chat_model", lambda: ExplodingModel())
 
     events = [
-        e async for e in run_agent_turn(db_session, cid, "another question please")
+        e async for e in run_agent_turn("CUST-001", cid, "another question please")
     ]
     kinds = [e.get("step_type") for e in events if e.get("kind") == "step"]
     assert "budget_exhausted" in kinds
@@ -134,12 +281,40 @@ async def test_token_budget_short_circuits_turn(db_session, monkeypatch):
     assert msgs and "usage limit" in msgs[-1]["content"]
 
 
+async def test_customer_daily_budget_short_circuits_turn(engine, monkeypatch):
+    monkeypatch.setattr(get_settings(), "customer_daily_token_budget", 50)
+    await shared.add_customer_tokens("CUST-001", 60)
+
+    class ExplodingModel:
+        def bind_tools(self, _tools):
+            return self
+
+        async def ainvoke(self, _messages):
+            raise AssertionError("daily budget should have short-circuited the LLM call")
+
+    monkeypatch.setattr(graph_module, "get_chat_model", lambda: ExplodingModel())
+    # A brand-new conversation doesn't reset the per-customer daily budget.
+    events = [e async for e in run_agent_turn("CUST-001", None, "hello")]
+    assert "budget_exhausted" in [e.get("step_type") for e in events if e.get("kind") == "step"]
+
+
+async def test_usage_accumulates_on_conversation(engine, monkeypatch):
+    msg = AIMessage(content="hi", tool_calls=[])
+    msg.usage_metadata = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+    monkeypatch.setattr(graph_module, "get_chat_model", lambda: FakeModel([msg]))
+    cid = await create_conversation("CUST-001")
+    for _ in range(2):
+        [e async for e in run_agent_turn("CUST-001", cid, "hello")]
+    async with db.SessionLocal() as s:
+        assert (await s.get(Conversation, cid)).tokens_used == 30
+    assert await shared.customer_tokens_today("CUST-001") == 30
+
+
 # ---------------------------------------------------------------------------
 # Recursion limit
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_recursion_limit_enforced(db_session, monkeypatch):
+async def test_recursion_limit_enforced(engine, monkeypatch):
     monkeypatch.setattr(get_settings(), "agent_recursion_limit", 2)
 
     # Always return a tool call → graph would loop forever without the limit.
@@ -147,8 +322,8 @@ async def test_recursion_limit_enforced(db_session, monkeypatch):
         content="",
         tool_calls=[
             {
-                "name": "lookup_customer",
-                "args": {"email": "alice@example.com"},
+                "name": "list_orders",
+                "args": {},
                 "id": "x",
                 "type": "tool_call",
             }
@@ -164,34 +339,28 @@ async def test_recursion_limit_enforced(db_session, monkeypatch):
 
     monkeypatch.setattr(graph_module, "get_chat_model", lambda: LoopingModel())
 
-    events = [e async for e in run_agent_turn(db_session, None, "go")]
+    events = [e async for e in run_agent_turn("CUST-001", None, "go")]
     # The runner catches the recursion error and yields a single error event.
     errors = [e for e in events if e.get("kind") == "error"]
     assert errors, "expected an error event when recursion limit is exceeded"
     # And no refund was ever recorded.
-    assert (
-        db_session.scalars(
-            select(Refund).where(Refund.decision == "approved")
-        ).all()
-        == []
-    )
+    assert await _approved_refunds() == []
 
 
 # ---------------------------------------------------------------------------
 # Output sanitizer — claim without a successful issue_refund is corrected
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_output_sanitizer_flags_unbacked_approval(db_session, monkeypatch):
-    # Model verifies identity but never calls issue_refund — and then *claims*
+async def test_output_sanitizer_flags_unbacked_approval(engine, monkeypatch):
+    # Model looks at orders but never calls issue_refund — and then *claims*
     # the refund was approved. The sanitizer must catch this.
     scripted = [
         AIMessage(
             content="",
             tool_calls=[
                 {
-                    "name": "lookup_customer",
-                    "args": {"email": "alice@example.com"},
+                    "name": "list_orders",
+                    "args": {},
                     "id": "1",
                     "type": "tool_call",
                 }
@@ -201,39 +370,22 @@ async def test_output_sanitizer_flags_unbacked_approval(db_session, monkeypatch)
     ]
     monkeypatch.setattr(graph_module, "get_chat_model", lambda: FakeModel(scripted))
 
-    events = [e async for e in run_agent_turn(db_session, None, "refund pls")]
+    events = [e async for e in run_agent_turn("CUST-001", None, "refund pls")]
     step_kinds = [e["step_type"] for e in events if e.get("kind") == "step"]
     assert "output_correction" in step_kinds
 
     final = [e for e in events if e.get("kind") == "message"]
     assert final and final[-1]["content"].startswith("_System note:")
     # And of course no approved refund exists.
-    assert (
-        db_session.scalars(
-            select(Refund).where(Refund.decision == "approved")
-        ).all()
-        == []
-    )
+    assert await _approved_refunds() == []
 
 
-@pytest.mark.asyncio
 async def test_output_sanitizer_does_not_fire_when_approval_is_real(
-    db_session, monkeypatch
+    engine, monkeypatch
 ):
     # Real golden path: model calls issue_refund and it returns approved.
     # The sanitizer must NOT prepend a correction.
     scripted = [
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "lookup_customer",
-                    "args": {"email": "alice@example.com"},
-                    "id": "1",
-                    "type": "tool_call",
-                }
-            ],
-        ),
         AIMessage(
             content="",
             tool_calls=[
@@ -249,7 +401,7 @@ async def test_output_sanitizer_does_not_fire_when_approval_is_real(
     ]
     monkeypatch.setattr(graph_module, "get_chat_model", lambda: FakeModel(scripted))
 
-    events = [e async for e in run_agent_turn(db_session, None, "refund pls")]
+    events = [e async for e in run_agent_turn("CUST-001", None, "refund pls")]
     step_kinds = [e["step_type"] for e in events if e.get("kind") == "step"]
     assert "output_correction" not in step_kinds
     final = [e for e in events if e.get("kind") == "message"]
@@ -313,9 +465,8 @@ def test_guard_does_not_flag_normal_refund_request():
 # Usage events end-to-end (basic shape check)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 async def test_usage_events_are_emitted_when_model_reports_usage(
-    db_session, monkeypatch
+    engine, monkeypatch
 ):
     msg = AIMessage(content="hi", tool_calls=[])
     # AIMessage carries usage_metadata via the standard LangChain shape.
@@ -323,7 +474,7 @@ async def test_usage_events_are_emitted_when_model_reports_usage(
 
     monkeypatch.setattr(graph_module, "get_chat_model", lambda: FakeModel([msg]))
 
-    events = [e async for e in run_agent_turn(db_session, None, "test")]
+    events = [e async for e in run_agent_turn("CUST-001", None, "test")]
     usage = [
         json.loads(json.dumps(e))
         for e in events

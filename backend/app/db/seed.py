@@ -1,12 +1,13 @@
+import asyncio
 import json
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
+from app.db import session as db
 from app.db.models import Customer, Order, utcnow
-from app.db.session import SessionLocal, init_db
 
 SEED_FILE = Path(__file__).resolve().parent / "data" / "seed.json"
 
@@ -17,23 +18,26 @@ def _days_ago(days: int | None):
     return utcnow() - timedelta(days=days)
 
 
-def seed_if_empty() -> None:
-    """Create tables and load fixture data once.
+async def seed_if_empty(create_tables: bool = False) -> bool:
+    """Load fixture data once. Returns True if data was inserted.
 
     Order dates are stored relative to 'now' in the fixture (days_ago) and
     converted to absolute timestamps here, so the return-window edge cases
     stay correct regardless of when the app is started.
     """
-    init_db()
-    with SessionLocal() as session:
-        existing = session.scalar(select(Customer).limit(1))
+    if create_tables:
+        await db.init_db()
+    async with db.SessionLocal() as session:
+        existing = await session.scalar(select(Customer).limit(1))
         if existing is not None:
-            return
+            return False
         _load(session)
-        session.commit()
+        await session.commit()
+        return True
 
 
-def _load(session: Session) -> None:
+def _load(session) -> None:
+    """Add fixture rows to `session` (sync or async — only calls `add`)."""
     data = json.loads(SEED_FILE.read_text())
     for c in data["customers"]:
         session.add(
@@ -51,7 +55,7 @@ def _load(session: Session) -> None:
                     customer_id=c["id"],
                     product_name=o["product_name"],
                     category=o.get("category", "general"),
-                    amount=o["amount"],
+                    amount=Decimal(str(o["amount"])),
                     status=o.get("status", "delivered"),
                     order_date=_days_ago(o.get("order_days_ago")),
                     delivered_date=_days_ago(o.get("delivered_days_ago")),
@@ -62,5 +66,5 @@ def _load(session: Session) -> None:
 
 
 if __name__ == "__main__":
-    seed_if_empty()
-    print(f"Seeded database from {SEED_FILE}")
+    inserted = asyncio.run(seed_if_empty())
+    print(f"Seeded database from {SEED_FILE}" if inserted else "Database already seeded")
