@@ -124,6 +124,13 @@ class ChatClient(FastHttpUser):
                 # separately so capacity limits are visible.
                 resp.success()
                 fire(self.environment, "chat:shed_503", 0)
+                # Behave like the real widget: honour Retry-After before the
+                # user's next attempt (otherwise shed clients retry-storm).
+                try:
+                    retry_after = float(resp.headers.get("Retry-After", "5"))
+                except (TypeError, ValueError):
+                    retry_after = 5.0
+                gevent.sleep(retry_after * random.uniform(1.0, 1.5))
                 return result
             if resp.status_code not in expect:
                 try:

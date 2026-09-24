@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -270,7 +271,8 @@ async def chat(req: ChatRequest, principal: Principal = Depends(require_customer
         raise HTTPException(
             status_code=503,
             detail="We're experiencing high demand. Please try again shortly.",
-            headers={"Retry-After": "5"},
+            # Jittered so shed clients don't all come back in lockstep.
+            headers={"Retry-After": str(random.randint(5, 15))},
         )
 
     if is_new:

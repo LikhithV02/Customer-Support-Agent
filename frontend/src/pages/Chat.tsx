@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { friendlyError, streamChat } from "../api";
+import { ApiError, friendlyError, streamChat } from "../api";
 import { getToken, onTokenChange } from "../auth";
 import ReasoningTimeline from "../components/ReasoningTimeline";
 import Markdown from "../components/Markdown";
@@ -18,6 +18,7 @@ export default function Chat() {
   const [streaming, setStreaming] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(Boolean(getToken("customer")));
+  const [busyNote, setBusyNote] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // A new identity always starts a fresh conversation.
@@ -61,10 +62,24 @@ export default function Chat() {
     };
 
     try {
-      await streamChat(text, conversationId, handle);
+      // A 503 means the turn was shed before it started (nothing was saved),
+      // so it's safe to retry after the server's Retry-After, a couple of times.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await streamChat(text, conversationId, handle);
+          break;
+        } catch (err) {
+          if (!(err instanceof ApiError && err.status === 503) || attempt >= 2) throw err;
+          const wait = (err.retryAfter ?? 5) * (1 + Math.random() * 0.5);
+          setBusyNote(`We're busy right now — retrying in ${Math.round(wait)}s…`);
+          await new Promise((r) => setTimeout(r, wait * 1000));
+          setBusyNote(null);
+        }
+      }
     } catch (err) {
       setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${friendlyError(err)}` }]);
     } finally {
+      setBusyNote(null);
       setStreaming(false);
     }
   }
@@ -120,7 +135,7 @@ export default function Chat() {
           <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
             <div className="mb-3 flex items-center gap-2 text-xs font-medium text-indigo-300">
               <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
-              Agent is working… (checking your order against the refund policy)
+              {busyNote ?? "Agent is working… (checking your order against the refund policy)"}
             </div>
             <ReasoningTimeline steps={steps} />
           </div>
