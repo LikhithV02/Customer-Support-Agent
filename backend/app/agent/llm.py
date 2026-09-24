@@ -64,8 +64,13 @@ def _build(provider: str):
 
 
 @lru_cache
+def get_model(provider: str):
+    """A cached client for `provider` (also used for the demo's scripted mode)."""
+    return _build(provider)
+
+
 def get_chat_model():
-    return _build(get_settings().llm_provider)
+    return get_model(get_settings().llm_provider)
 
 
 @lru_cache
@@ -75,15 +80,16 @@ def get_fallback_model():
     fallback = settings.llm_fallback_provider
     if not fallback or fallback == settings.llm_provider:
         return None
-    return _build(fallback)
+    return get_model(fallback)
 
 
 def use_prompt_caching() -> bool:
     """Anthropic prompt caching on the system prompt (and, by prefix, the tools).
 
-    Disabled when a fallback provider is configured, because the same message
-    list is replayed to the fallback and other providers reject Anthropic's
-    `cache_control` content-block field.
+    Disabled when a real fallback provider is configured, because the same
+    message list is replayed to the fallback and other providers reject
+    Anthropic's `cache_control` content-block field. The scripted `fake`
+    fallback ignores it, so caching stays on.
     """
     settings = get_settings()
-    return settings.llm_provider == "anthropic" and not settings.llm_fallback_provider
+    return settings.llm_provider == "anthropic" and settings.llm_fallback_provider in ("", "fake")

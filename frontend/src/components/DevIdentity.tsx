@@ -22,7 +22,7 @@ export default function DevIdentity() {
   const hasAdmin = Boolean(getToken("admin"));
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-200">
+    <div className="flex items-center gap-2 rounded-lg border border-warn/30 bg-warn/10 px-2 py-1 text-xs text-warn">
       <span className="font-semibold">DEV</span>
       <select
         value={current}
@@ -32,7 +32,7 @@ export default function DevIdentity() {
           if (id) await devLogin("customer", id);
           else setToken("customer", null);
         }}
-        className="rounded bg-slate-900 px-1 py-0.5 text-slate-200"
+        className="max-w-[10rem] rounded bg-surface px-1 py-0.5 text-fg"
         aria-label="Act as customer"
       >
         <option value="">Act as customer…</option>
@@ -44,7 +44,7 @@ export default function DevIdentity() {
       </select>
       <button
         onClick={() => (hasAdmin ? setToken("admin", null) : devLogin("admin"))}
-        className="rounded bg-slate-900 px-2 py-0.5 text-slate-200 hover:bg-slate-800"
+        className="rounded bg-surface px-2 py-0.5 text-fg hover:bg-surface-2"
       >
         {hasAdmin ? "Admin: on" : "Admin: off"}
       </button>

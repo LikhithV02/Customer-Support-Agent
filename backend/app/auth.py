@@ -9,7 +9,10 @@ Supported verification:
 - RS256/ES256 via the issuer's JWKS endpoint (`JWT_JWKS_URL`).
 
 Claims: `sub` (customer id, or admin user id), optional `role` ("customer" by
-default, or "admin"), `exp` (required), and `iss`/`aud` when configured.
+default, or "admin"), `exp` (required), and `iss`/`aud` when configured. An
+admin token may carry `scope` (a customer id): it then only sees that
+customer's conversations. The public demo issues such scoped admin tokens so
+each visitor can inspect their own agent traces and nobody else's.
 
 `AUTH_MODE=dev` additionally exposes `POST /api/dev/token` so the local demo and
 load tests can mint tokens; in production that route does not exist.
@@ -34,6 +37,8 @@ ROLE_ADMIN = "admin"
 class Principal:
     sub: str
     role: str
+    # Admin tokens only: restrict visibility to this customer's data.
+    scope: str | None = None
 
     @property
     def is_admin(self) -> bool:
@@ -79,10 +84,13 @@ def decode_token(token: str) -> Principal:
     role = claims.get("role", ROLE_CUSTOMER)
     if role not in (ROLE_CUSTOMER, ROLE_ADMIN):
         raise AuthError("unknown role")
-    return Principal(sub=str(claims["sub"]), role=role)
+    scope = claims.get("scope")
+    return Principal(sub=str(claims["sub"]), role=role, scope=str(scope) if scope else None)
 
 
-def mint_token(sub: str, role: str = ROLE_CUSTOMER, ttl_s: int | None = None) -> str:
+def mint_token(
+    sub: str, role: str = ROLE_CUSTOMER, ttl_s: int | None = None, scope: str | None = None
+) -> str:
     """Sign an HS256 token with the configured secret (dev, tests, load tests)."""
     settings = get_settings()
     now = int(time.time())
@@ -92,6 +100,8 @@ def mint_token(sub: str, role: str = ROLE_CUSTOMER, ttl_s: int | None = None) ->
         "iat": now,
         "exp": now + (ttl_s or settings.dev_token_ttl_s),
     }
+    if scope:
+        claims["scope"] = scope
     if settings.jwt_issuer:
         claims["iss"] = settings.jwt_issuer
     if settings.jwt_audience:

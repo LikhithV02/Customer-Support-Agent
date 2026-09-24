@@ -61,8 +61,10 @@ as `Authorization: Bearer …`.
   `postMessage({type: "acme-support-token", token})` from a parent origin listed
   in `VITE_TRUSTED_PARENT_ORIGINS` (see `frontend/src/auth.ts`).
 - `AUTH_MODE=dev` enables `POST /api/dev/token` for local use. With `ENV=prod`
-  the app refuses to start unless `AUTH_MODE=jwt`, a real verification key,
-  Postgres and Redis are configured.
+  the app refuses to start unless `AUTH_MODE` is `jwt` (or `demo`), a real
+  verification key, Postgres and Redis are configured.
+- `AUTH_MODE=demo` is for a public showcase: anonymous visitors get a sandbox
+  customer and a scoped admin token, with cost caps. See [DEPLOY.md](DEPLOY.md).
 
 ---
 

@@ -12,6 +12,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     WEB_CONCURRENCY=1 \
+    PORT=8000 \
     FORWARDED_ALLOW_IPS=*
 
 RUN groupadd --system --gid 10001 app && \
@@ -31,10 +32,11 @@ USER 10001
 EXPOSE 8000
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=5 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/live')" || exit 1
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f\"http://localhost:{os.environ['PORT']}/api/health/live\")" || exit 1
 
 # One process per container: scale with replicas (k8s HPA / compose --scale),
 # which keeps Prometheus metrics per-process and memory predictable.
 # --proxy-headers + FORWARDED_ALLOW_IPS make request.client the real user IP
 # behind nginx/ingress (restrict FORWARDED_ALLOW_IPS to the ingress CIDR in prod).
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY} --proxy-headers --forwarded-allow-ips \"${FORWARDED_ALLOW_IPS}\" --timeout-graceful-shutdown 60 --timeout-keep-alive 75 --no-server-header"]
+# PORT is set by serverless platforms (Cloud Run, Railway); 8000 otherwise.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers ${WEB_CONCURRENCY} --proxy-headers --forwarded-allow-ips \"${FORWARDED_ALLOW_IPS}\" --timeout-graceful-shutdown 60 --timeout-keep-alive 75 --no-server-header"]

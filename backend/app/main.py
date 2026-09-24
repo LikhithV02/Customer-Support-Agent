@@ -31,8 +31,10 @@ from app.auth import (
 )
 from app.config import get_settings
 from app.db import session as db
-from app.db.models import Conversation, Customer, Message, ReasoningEvent
+from app.db.models import Conversation, Customer, Message, Order, ReasoningEvent, Refund
 from app.db.seed import seed_if_empty
+from app.demo import order_out
+from app.demo import router as demo_router
 from app.events import broadcaster
 from app.observability import (
     REJECTIONS,
@@ -44,10 +46,12 @@ from app.observability import (
     log_event,
 )
 from app.schemas import (
+    AdminStats,
     ChatRequest,
     ConversationDetail,
     ConversationSummary,
     MessageOut,
+    OrderOut,
     ReasoningEventOut,
 )
 
@@ -82,8 +86,12 @@ if settings.cors_origin_list:
         allow_origins=settings.cors_origin_list,
         allow_methods=["GET", "POST"],
         allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        # The UI reads these on 429/503 and for support references.
+        expose_headers=["Retry-After", "X-Request-ID"],
+        max_age=3600,
     )
 app.add_middleware(RequestContextMiddleware, max_body_bytes=settings.max_request_bytes)
+app.include_router(demo_router)
 
 
 @app.exception_handler(Exception)
@@ -134,6 +142,22 @@ async def ready() -> Response:
 @app.get("/metrics", include_in_schema=False)
 async def metrics() -> Response:
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/api/meta")
+async def meta() -> dict:
+    """Public, non-sensitive facts the UI adapts to (sign-in flow, model)."""
+    scripted = settings.llm_provider == "fake"
+    return {
+        "auth_mode": settings.auth_mode,
+        "model": "scripted" if scripted else settings.llm_provider,
+        "demo": {
+            "session_ttl_s": settings.demo_token_ttl_s,
+            "data_ttl_hours": settings.demo_data_ttl_hours,
+        }
+        if settings.is_demo
+        else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -343,8 +367,23 @@ async def my_conversation(
     )
 
 
+@app.get("/api/me/orders", response_model=list[OrderOut])
+async def my_orders(principal: Principal = Depends(require_customer)) -> list[OrderOut]:
+    async with db.SessionLocal() as session:
+        orders = (
+            await session.scalars(
+                select(Order)
+                .where(Order.customer_id == principal.sub)
+                .order_by(Order.id)
+                .limit(100)
+            )
+        ).all()
+    return [order_out(o) for o in orders]
+
+
 # ---------------------------------------------------------------------------
-# Admin (requires role=admin)
+# Admin (requires role=admin). A scoped admin token (the public demo's) only
+# sees its own customer's data; foreign ids are 404 so they can't be probed.
 # ---------------------------------------------------------------------------
 
 
@@ -390,27 +429,71 @@ async def _conversation_summaries(
     ]
 
 
-@app.get(
-    "/api/conversations",
-    response_model=list[ConversationSummary],
-    dependencies=[Depends(require_admin)],
-)
+@app.get("/api/conversations", response_model=list[ConversationSummary])
 async def list_conversations(
     limit: int = Query(50, ge=1, le=200),
     before: datetime | None = Query(None, description="cursor: created_at of last row"),
+    principal: Principal = Depends(require_admin),
 ) -> list[ConversationSummary]:
-    return await _conversation_summaries(limit, before)
+    return await _conversation_summaries(limit, before, customer_id=principal.scope)
 
 
-@app.get(
-    "/api/conversations/{conversation_id}",
-    response_model=ConversationDetail,
-    dependencies=[Depends(require_admin)],
-)
-async def get_conversation(conversation_id: str) -> ConversationDetail:
+def _visible(convo: Conversation | None, principal: Principal) -> bool:
+    return convo is not None and (principal.scope is None or convo.customer_id == principal.scope)
+
+
+@app.get("/api/admin/stats", response_model=AdminStats)
+async def admin_stats(principal: Principal = Depends(require_admin)) -> AdminStats:
+    """Headline numbers for the dashboard (scoped like the conversation list)."""
+
+    def scoped(stmt, conv_col):
+        if principal.scope is None:
+            return stmt
+        owned = select(Conversation.id).where(Conversation.customer_id == principal.scope)
+        return stmt.where(conv_col.in_(owned))
+
+    async with db.SessionLocal() as session:
+        conv_stmt = select(
+            func.count(Conversation.id), func.coalesce(func.sum(Conversation.tokens_used), 0)
+        )
+        if principal.scope is not None:
+            conv_stmt = conv_stmt.where(Conversation.customer_id == principal.scope)
+        conversations, tokens = (await session.execute(conv_stmt)).one()
+        messages = await session.scalar(
+            scoped(select(func.count(Message.id)), Message.conversation_id)
+        )
+        decisions = (
+            await session.execute(
+                scoped(
+                    select(Refund.decision, func.count(Refund.id)).group_by(Refund.decision),
+                    Refund.conversation_id,
+                )
+            )
+        ).all()
+        flags = await session.scalar(
+            scoped(
+                select(func.count(ReasoningEvent.id)).where(
+                    ReasoningEvent.step_type == "injection_flag"
+                ),
+                ReasoningEvent.conversation_id,
+            )
+        )
+    return AdminStats(
+        conversations=conversations or 0,
+        messages=messages or 0,
+        decisions={d: n for d, n in decisions},
+        injection_flags=flags or 0,
+        tokens_used=int(tokens or 0),
+    )
+
+
+@app.get("/api/conversations/{conversation_id}", response_model=ConversationDetail)
+async def get_conversation(
+    conversation_id: str, principal: Principal = Depends(require_admin)
+) -> ConversationDetail:
     async with db.SessionLocal() as session:
         convo = await session.get(Conversation, conversation_id)
-        if convo is None:
+        if not _visible(convo, principal):
             raise HTTPException(status_code=404, detail="conversation not found")
         name = None
         if convo.customer_id:
@@ -449,12 +532,16 @@ async def get_conversation(conversation_id: str) -> ConversationDetail:
     )
 
 
-@app.get(
-    "/api/conversations/{conversation_id}/stream",
-    dependencies=[Depends(require_admin)],
-)
-async def stream_conversation(conversation_id: str):
+@app.get("/api/conversations/{conversation_id}/stream")
+async def stream_conversation(
+    conversation_id: str, principal: Principal = Depends(require_admin)
+):
     """Live reasoning events for a conversation (admin dashboard)."""
+    if principal.scope is not None:
+        async with db.SessionLocal() as session:
+            convo = await session.get(Conversation, conversation_id)
+        if not _visible(convo, principal):
+            raise HTTPException(status_code=404, detail="conversation not found")
 
     async def event_stream():
         SSE_STREAMS.labels("admin").inc()

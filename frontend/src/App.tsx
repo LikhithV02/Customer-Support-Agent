@@ -1,49 +1,86 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import DevIdentity from "./components/DevIdentity";
+import { ServerCrash } from "lucide-react";
+import { Navigate, Route, Routes } from "react-router-dom";
+import Header from "./components/Header";
+import Logo from "./components/Logo";
+import { Button, Spinner } from "./components/ui";
+import { getDemo } from "./lib/demo";
+import { useMeta } from "./lib/meta";
 import Admin from "./pages/Admin";
 import Chat from "./pages/Chat";
+import NotFound from "./pages/NotFound";
+import Welcome from "./pages/Welcome";
 
-function NavTab({ to, label }: { to: string; label: string }) {
+function Splash() {
   return (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        `px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-          isActive
-            ? "bg-indigo-500/20 text-indigo-300"
-            : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
-        }`
-      }
-    >
-      {label}
-    </NavLink>
+    <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+      <Logo size={48} />
+      <div className="flex items-center gap-2 text-sm text-muted">
+        <Spinner className="text-brand" /> Waking up the demo server…
+      </div>
+      <p className="max-w-xs text-xs text-subtle">
+        The backend scales to zero when idle, so the first request can take a few seconds.
+      </p>
+    </div>
   );
 }
 
+function Offline() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+      <ServerCrash size={40} className="text-bad" />
+      <div>
+        <h1 className="text-lg font-semibold">The demo backend isn't responding</h1>
+        <p className="mt-1 text-sm text-muted">It may be redeploying. Please try again in a minute.</p>
+      </div>
+      <Button variant="primary" onClick={() => window.location.reload()}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+/** In demo mode, visitors need a sandbox before they can chat. */
+function RequireSession({ children }: { children: JSX.Element }) {
+  const { meta } = useMeta();
+  if (meta?.auth_mode === "demo" && !getDemo()) return <Navigate to="/" replace />;
+  return children;
+}
+
+/** Evaluated per render (not once in App) so resetting the sandbox lands here. */
+function Home() {
+  const { meta } = useMeta();
+  return meta?.auth_mode === "demo" && !getDemo() ? <Welcome /> : <Navigate to="/chat" replace />;
+}
+
 export default function App() {
+  const { meta, loading, error } = useMeta();
+  if (loading) return <Splash />;
+  if (error || !meta) return <Offline />;
+
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900/60 px-6 py-3 backdrop-blur">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500 font-bold text-white">
-            A
-          </div>
-          <div>
-            <div className="text-sm font-semibold text-slate-100">ACME Refund Support</div>
-            <div className="text-xs text-slate-500">AI Customer Support Agent</div>
-          </div>
-        </div>
-        <nav className="flex items-center gap-1">
-          <DevIdentity />
-          <NavTab to="/chat" label="Customer Chat" />
-          <NavTab to="/admin" label="Admin Dashboard" />
-        </nav>
-      </header>
+      <Header />
       <main className="min-h-0 flex-1">
         <Routes>
-          <Route path="/" element={<Navigate to="/chat" replace />} />
-          <Route path="/chat" element={<Chat />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route path="/" element={<Home />} />
+          <Route
+            path="/chat"
+            element={
+              <RequireSession>
+                <Chat />
+              </RequireSession>
+            }
+          />
+          <Route
+            path="/console"
+            element={
+              <RequireSession>
+                <Admin />
+              </RequireSession>
+            }
+          />
+          <Route path="/admin" element={<Navigate to="/console" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
     </div>

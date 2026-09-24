@@ -1,62 +1,260 @@
-import { useEffect, useRef, useState } from "react";
-import { ApiError, friendlyError, streamChat } from "../api";
+import clsx from "clsx";
+import { Activity, ArrowUp, Check, Copy, Package, RotateCcw, User } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError, fetchOrders, friendlyError, streamChat } from "../api";
 import { getToken, onTokenChange } from "../auth";
-import ReasoningTimeline from "../components/ReasoningTimeline";
+import AgentPanel from "../components/AgentPanel";
+import Logo from "../components/Logo";
 import Markdown from "../components/Markdown";
-import type { AgentEvent, ChatMessage, StepEvent } from "../types";
+import OrdersPanel from "../components/OrdersPanel";
+import { useToast } from "../components/Toaster";
+import { Badge, Button, Drawer, IconButton } from "../components/ui";
+import { getDemo } from "../lib/demo";
+import { useMeta } from "../lib/meta";
+import { OUTCOME_META, outcomeOf } from "../lib/outcome";
+import { GENERIC_PROMPTS, scenarioCards, type ScenarioCard } from "../lib/scenarios";
+import type { AgentEvent, ChatMessage, Order, StepEvent } from "../types";
 
-const SAMPLE_PROMPTS = [
-  "What orders do I have?",
-  "I'd like a refund for my most recent order.",
-  "Can I return order ORD-1001?",
-];
+const MAX_CHARS = 2000;
+const uid = () => Math.random().toString(36).slice(2);
+
+function statusLine(steps: StepEvent[]): string {
+  const last = [...steps].reverse().find((s) => s.step_type !== "usage");
+  if (!last) return "Thinking…";
+  switch (last.step_type) {
+    case "tool_call":
+      return `Calling ${last.payload.tool}…`;
+    case "policy_eval":
+      return "Checking the refund policy…";
+    case "decision":
+      return "Writing the reply…";
+    case "injection_flag":
+      return "Suspicious instruction flagged. Continuing safely…";
+    default:
+      return "Thinking…";
+  }
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <IconButton
+      label={done ? "Copied" : "Copy message"}
+      className="h-6 w-6"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setDone(true);
+          setTimeout(() => setDone(false), 1500);
+        } catch {
+          /* clipboard unavailable */
+        }
+      }}
+    >
+      {done ? <Check size={12} /> : <Copy size={12} />}
+    </IconButton>
+  );
+}
+
+function Bubble({ m }: { m: ChatMessage }) {
+  const time = new Date(m.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (m.role === "user") {
+    return (
+      <div className="flex animate-fade-up justify-end gap-2.5">
+        <div className="max-w-[85%]">
+          <div className="whitespace-pre-wrap rounded-2xl rounded-br-md bg-brand-solid px-4 py-2.5 text-sm text-white shadow-sm">
+            {m.content}
+          </div>
+          <div className="mt-1 text-right text-[10px] text-subtle">{time}</div>
+        </div>
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-2 text-muted">
+          <User size={14} />
+        </span>
+      </div>
+    );
+  }
+  const outcome = m.outcome ? OUTCOME_META[m.outcome] : null;
+  return (
+    <div className="group flex animate-fade-up gap-2.5">
+      <span className="mt-0.5 shrink-0">
+        <Logo size={28} />
+      </span>
+      <div className="min-w-0 max-w-[85%]">
+        <div
+          className={clsx(
+            "rounded-2xl rounded-bl-md border px-4 py-2.5 text-sm shadow-sm",
+            m.error ? "border-bad/30 bg-bad/5" : "border-line bg-surface",
+          )}
+        >
+          <Markdown>{m.content}</Markdown>
+        </div>
+        <div className="mt-1 flex items-center gap-2 text-[10px] text-subtle">
+          <span>{time}</span>
+          {outcome && <Badge tone={outcome.tone}>{outcome.label}</Badge>}
+          <span className="opacity-0 transition-opacity group-hover:opacity-100">
+            <CopyButton text={m.content} />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Typing({ label }: { label: string }) {
+  return (
+    <div className="flex animate-fade-up gap-2.5" aria-live="polite">
+      <span className="mt-0.5 shrink-0">
+        <Logo size={28} />
+      </span>
+      <div className="flex items-center gap-3 rounded-2xl rounded-bl-md border border-line bg-surface px-4 py-3 text-xs text-muted">
+        <span className="flex gap-1" aria-hidden>
+          {[0, 150, 300].map((d) => (
+            <span
+              key={d}
+              className="h-1.5 w-1.5 animate-bounce rounded-full bg-brand"
+              style={{ animationDelay: `${d}ms` }}
+            />
+          ))}
+        </span>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function ScenarioGrid({ cards, onPick }: { cards: ScenarioCard[]; onPick: (p: string) => void }) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {cards.map((c, i) => {
+        const expect = c.expect === "info" ? null : OUTCOME_META[c.expect];
+        return (
+          <button
+            key={c.key}
+            onClick={() => onPick(c.prompt)}
+            style={{ animationDelay: `${i * 40}ms` }}
+            className="group animate-fade-up rounded-xl border border-line bg-surface p-3.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand/50 hover:shadow-md"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-sm font-semibold group-hover:text-brand">{c.title}</span>
+              {expect && (
+                <Badge tone={expect.tone} className="shrink-0">
+                  expect: {c.expect}
+                </Badge>
+              )}
+            </div>
+            {c.blurb && <p className="mt-1 text-xs text-muted">{c.blurb}</p>}
+            <p className="mt-2 line-clamp-2 font-mono text-[11px] text-subtle">“{c.prompt}”</p>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function Chat() {
+  const { meta } = useMeta();
+  const toast = useToast();
+  const demo = meta?.auth_mode === "demo" ? getDemo() : null;
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [steps, setSteps] = useState<StepEvent[]>([]);
+  const [turnStart, setTurnStart] = useState<number | null>(null);
+  const [turnEnd, setTurnEnd] = useState<number | null>(null);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(Boolean(getToken("customer")));
   const [busyNote, setBusyNote] = useState<string | null>(null);
+  const [orders, setOrders] = useState<Order[]>(demo?.orders ?? []);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [drawer, setDrawer] = useState<"orders" | "agent" | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const reset = useCallback(() => {
+    setMessages([]);
+    setSteps([]);
+    setTurnStart(null);
+    setTurnEnd(null);
+    setConversationId(null);
+  }, []);
+
+  const loadOrders = useCallback(async () => {
+    if (!getToken("customer")) return setOrders([]);
+    setOrdersLoading(true);
+    try {
+      setOrders(await fetchOrders());
+    } catch {
+      /* the panel keeps its last state */
+    } finally {
+      setOrdersLoading(false);
+    }
+  }, []);
 
   // A new identity always starts a fresh conversation.
   useEffect(
     () =>
       onTokenChange(() => {
         setSignedIn(Boolean(getToken("customer")));
-        setMessages([]);
-        setSteps([]);
-        setConversationId(null);
+        reset();
+        void loadOrders();
       }),
-    [],
+    [reset, loadOrders],
   );
+  useEffect(() => {
+    void loadOrders();
+  }, [loadOrders]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, steps]);
+  }, [messages, streaming]);
+
+  // Auto-grow the composer.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+  }, [input]);
 
   async function send(text: string) {
-    if (!text.trim() || streaming || !signedIn) return;
-    setMessages((m) => [...m, { role: "user", content: text }]);
+    text = text.trim();
+    if (!text || streaming || !signedIn) return;
+    setMessages((m) => [...m, { id: uid(), role: "user", content: text, at: Date.now() }]);
     setInput("");
     setSteps([]);
+    setTurnStart(Date.now());
+    setTurnEnd(null);
     setStreaming(true);
+    setDrawer(null);
 
+    const turnSteps: StepEvent[] = [];
     const handle = (event: AgentEvent) => {
       switch (event.kind) {
         case "conversation":
           setConversationId(event.conversation_id);
           break;
         case "step":
-          setSteps((s) => [...s, event]);
+          turnSteps.push(event);
+          setSteps([...turnSteps]);
           break;
         case "message":
-          setMessages((m) => [...m, { role: "assistant", content: event.content }]);
+          setMessages((m) => [
+            ...m,
+            {
+              id: uid(),
+              role: "assistant",
+              content: event.content,
+              at: Date.now(),
+              outcome: outcomeOf(turnSteps),
+            },
+          ]);
           break;
         case "error":
-          setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${event.message}` }]);
+          setMessages((m) => [
+            ...m,
+            { id: uid(), role: "assistant", content: event.message, at: Date.now(), error: true },
+          ]);
           break;
       }
     };
@@ -71,107 +269,181 @@ export default function Chat() {
         } catch (err) {
           if (!(err instanceof ApiError && err.status === 503) || attempt >= 2) throw err;
           const wait = (err.retryAfter ?? 5) * (1 + Math.random() * 0.5);
-          setBusyNote(`We're busy right now — retrying in ${Math.round(wait)}s…`);
+          setBusyNote(`High demand right now. Retrying in ${Math.round(wait)}s…`);
           await new Promise((r) => setTimeout(r, wait * 1000));
           setBusyNote(null);
         }
       }
     } catch (err) {
-      setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${friendlyError(err)}` }]);
+      const msg = friendlyError(err);
+      if (err instanceof ApiError && [409, 429].includes(err.status)) {
+        toast(msg, "error");
+        setMessages((m) => m.slice(0, -1));
+        setInput(text);
+      } else {
+        setMessages((m) => [
+          ...m,
+          { id: uid(), role: "assistant", content: msg, at: Date.now(), error: true },
+        ]);
+      }
+      if (err instanceof ApiError && err.status === 404) setConversationId(null);
     } finally {
       setBusyNote(null);
       setStreaming(false);
+      setTurnEnd(Date.now());
+      void loadOrders();
+      inputRef.current?.focus();
     }
   }
 
+  const cards = orders.some((o) => o.scenario) ? scenarioCards(orders) : GENERIC_PROMPTS;
+  const tooLong = input.length > MAX_CHARS;
+
+  const ordersPanel = (
+    <OrdersPanel orders={orders} loading={ordersLoading} onAsk={send} disabled={streaming} />
+  );
+  const agentPanel = (
+    <AgentPanel steps={steps} streaming={streaming} startedAt={turnStart} endedAt={turnEnd} />
+  );
+
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col px-4">
-      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto py-6">
-        {!signedIn && (
-          <div className="mt-10 text-center text-sm text-slate-400">
-            Please sign in to chat with support. (Local dev: pick a customer in the DEV menu above.)
+    <div className="flex h-full">
+      {signedIn && (
+        <aside className="hidden w-72 shrink-0 flex-col border-r border-line bg-surface/50 xl:flex">
+          <div className="flex items-center gap-2 border-b border-line px-4 py-3 text-sm font-semibold">
+            <Package size={16} className="text-brand" /> Your orders
           </div>
-        )}
-        {signedIn && messages.length === 0 && (
-          <div className="mt-10 text-center">
-            <h2 className="text-lg font-semibold text-slate-200">
-              How can I help with your refund today?
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              I can look up your orders and process eligible refunds.
-            </p>
-            <div className="mt-6 space-y-2">
-              {SAMPLE_PROMPTS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => send(p)}
-                  className="block w-full rounded-lg border border-slate-800 bg-slate-900/50 px-4 py-2.5 text-left text-sm text-slate-300 transition-colors hover:border-indigo-500/50 hover:bg-slate-800"
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+          <div className="min-h-0 flex-1 overflow-y-auto">{ordersPanel}</div>
+        </aside>
+      )}
 
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-          >
-            <div
-              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
-                m.role === "user"
-                  ? "whitespace-pre-wrap bg-indigo-500 text-white"
-                  : "border border-slate-800 bg-slate-900 text-slate-200"
-              }`}
-            >
-              {m.role === "user" ? m.content : <Markdown>{m.content}</Markdown>}
-            </div>
+      <section className="flex min-w-0 flex-1 flex-col">
+        <div className="flex items-center gap-2 border-b border-line px-4 py-2">
+          <div className="hidden min-w-0 flex-1 truncate text-xs text-subtle sm:block">
+            {demo ? (
+              <>
+                Signed in as <span className="font-medium text-fg">{demo.customer.name}</span>{" "}
+                <span className="font-mono">({demo.customer.id})</span>
+              </>
+            ) : signedIn ? (
+              "Signed in"
+            ) : (
+              "Not signed in"
+            )}
           </div>
-        ))}
-
-        {streaming && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-            <div className="mb-3 flex items-center gap-2 text-xs font-medium text-indigo-300">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
-              {busyNote ?? "Agent is working… (checking your order against the refund policy)"}
-            </div>
-            <ReasoningTimeline steps={steps} />
-          </div>
-        )}
-      </div>
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          send(input);
-        }}
-        className="border-t border-slate-800 py-4"
-      >
-        <div className="flex items-end gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send(input);
-              }
-            }}
-            rows={1}
-            placeholder="Type your message…"
-            className="flex-1 resize-none rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
-          />
-          <button
-            type="submit"
-            disabled={streaming || !signedIn || !input.trim()}
-            className="rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Send
-          </button>
+          {signedIn && (
+            <Button size="sm" variant="ghost" className="ml-auto xl:hidden sm:ml-0" onClick={() => setDrawer("orders")}>
+              <Package size={14} /> Orders
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" className="lg:hidden" onClick={() => setDrawer("agent")}>
+            <Activity size={14} /> Reasoning
+            {steps.length > 0 && <Badge tone="brand">{steps.length}</Badge>}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={reset} disabled={streaming || !messages.length}>
+            <RotateCcw size={14} /> New chat
+          </Button>
         </div>
-      </form>
+
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
+            {!signedIn && (
+              <div className="mt-16 text-center text-sm text-muted">
+                Sign in to chat with support.
+                {meta?.auth_mode === "dev" && " (Local dev: pick a customer in the DEV menu above.)"}
+              </div>
+            )}
+
+            {signedIn && messages.length === 0 && (
+              <div className="animate-fade-up pt-4">
+                <div className="mb-6 flex items-center gap-3">
+                  <Logo size={40} />
+                  <div>
+                    <h1 className="text-lg font-semibold">Hi there, how can I help with your order?</h1>
+                    <p className="text-sm text-muted">
+                      Pick a scenario to see how the agent handles it, or type your own message.
+                    </p>
+                  </div>
+                </div>
+                <ScenarioGrid cards={cards} onPick={send} />
+              </div>
+            )}
+
+            {messages.map((m) => (
+              <Bubble key={m.id} m={m} />
+            ))}
+            {streaming && <Typing label={busyNote ?? statusLine(steps)} />}
+          </div>
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send(input);
+          }}
+          className="border-t border-line bg-surface/60 px-4 py-3"
+        >
+          <div className="mx-auto max-w-3xl">
+            <div
+              className={clsx(
+                "flex items-end gap-2 rounded-2xl border bg-surface p-2 shadow-sm transition-colors focus-within:border-brand/60",
+                tooLong ? "border-bad/60" : "border-line",
+              )}
+            >
+              <label htmlFor="composer" className="sr-only">
+                Message
+              </label>
+              <textarea
+                id="composer"
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    void send(input);
+                  }
+                }}
+                rows={1}
+                disabled={!signedIn}
+                placeholder={signedIn ? "Ask about an order or request a refund…" : "Sign in to chat"}
+                className="max-h-44 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2 text-sm placeholder:text-subtle focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              />
+              <button
+                type="submit"
+                aria-label="Send message"
+                disabled={streaming || !signedIn || !input.trim() || tooLong}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-solid text-white transition-opacity hover:opacity-90 disabled:opacity-30"
+              >
+                <ArrowUp size={18} />
+              </button>
+            </div>
+            <div className="mt-1.5 flex justify-between px-1 text-[10px] text-subtle">
+              <span>Enter to send · Shift+Enter for a new line</span>
+              <span className={clsx(tooLong && "font-semibold text-bad")}>
+                {input.length > MAX_CHARS * 0.8 && `${input.length}/${MAX_CHARS}`}
+              </span>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <aside className="hidden w-96 shrink-0 border-l border-line bg-surface/50 lg:block">
+        {agentPanel}
+      </aside>
+
+      <Drawer open={drawer === "orders"} onClose={() => setDrawer(null)} title="Your orders">
+        {ordersPanel}
+      </Drawer>
+      <Drawer open={drawer === "agent"} onClose={() => setDrawer(null)} title="Agent reasoning">
+        <AgentPanel
+          steps={steps}
+          streaming={streaming}
+          startedAt={turnStart}
+          endedAt={turnEnd}
+          showTitle={false}
+        />
+      </Drawer>
     </div>
   );
 }

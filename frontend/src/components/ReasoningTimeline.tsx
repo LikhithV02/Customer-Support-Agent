@@ -1,59 +1,93 @@
-import type { StepEvent } from "../types";
+import clsx from "clsx";
+import {
+  AlertTriangle,
+  Brain,
+  CircleDollarSign,
+  Gauge,
+  Info,
+  ShieldAlert,
+  ShieldCheck,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
+import type { Outcome, StepEvent } from "../types";
+import { OUTCOME_META, type Tone } from "../lib/outcome";
+import { Badge } from "./ui";
 
-const STEP_META: Record<
-  string,
-  { label: string; dot: string; chip: string }
-> = {
-  model: { label: "Reasoning", dot: "bg-slate-400", chip: "text-slate-300" },
-  tool_call: { label: "Tool call", dot: "bg-sky-400", chip: "text-sky-300" },
-  tool_result: { label: "Tool result", dot: "bg-slate-500", chip: "text-slate-300" },
-  policy_eval: { label: "Policy check", dot: "bg-amber-400", chip: "text-amber-300" },
-  decision: { label: "Decision", dot: "bg-emerald-400", chip: "text-emerald-300" },
-  injection_flag: {
-    label: "Injection attempt",
-    dot: "bg-rose-500",
-    chip: "text-rose-300",
-  },
-  error: { label: "Error", dot: "bg-rose-500", chip: "text-rose-300" },
-  usage: { label: "Token usage", dot: "bg-slate-600", chip: "text-slate-400" },
-  budget_exhausted: { label: "Budget exhausted", dot: "bg-amber-500", chip: "text-amber-300" },
-  output_correction: { label: "Output corrected", dot: "bg-rose-400", chip: "text-rose-300" },
+const STEP_META: Record<string, { label: string; icon: LucideIcon; tone: Tone }> = {
+  model: { label: "Reasoning", icon: Brain, tone: "neutral" },
+  tool_call: { label: "Tool call", icon: Wrench, tone: "info" },
+  tool_result: { label: "Tool result", icon: Wrench, tone: "neutral" },
+  policy_eval: { label: "Policy check", icon: ShieldCheck, tone: "warn" },
+  decision: { label: "Decision", icon: CircleDollarSign, tone: "ok" },
+  injection_flag: { label: "Injection attempt", icon: ShieldAlert, tone: "bad" },
+  error: { label: "Error", icon: AlertTriangle, tone: "bad" },
+  usage: { label: "Tokens", icon: Gauge, tone: "neutral" },
+  budget_exhausted: { label: "Budget exhausted", icon: Gauge, tone: "warn" },
+  output_correction: { label: "Output corrected", icon: ShieldAlert, tone: "bad" },
+  notice: { label: "Notice", icon: Info, tone: "info" },
 };
 
-const DECISION_COLOR: Record<string, string> = {
-  approved: "text-emerald-300 border-emerald-500/40 bg-emerald-500/10",
-  denied: "text-rose-300 border-rose-500/40 bg-rose-500/10",
-  escalated: "text-amber-300 border-amber-500/40 bg-amber-500/10",
+const DOT: Record<Tone, string> = {
+  ok: "bg-ok/15 text-ok",
+  bad: "bg-bad/15 text-bad",
+  warn: "bg-warn/15 text-warn",
+  info: "bg-info/15 text-info",
+  brand: "bg-brand/15 text-brand",
+  neutral: "bg-surface-2 text-muted",
 };
 
-function Json({ value }: { value: unknown }) {
+function Json({ value, label = "Details" }: { value: unknown; label?: string }) {
   return (
-    <pre className="mt-1 overflow-x-auto rounded bg-slate-950/70 p-2 font-mono text-[11px] leading-relaxed text-slate-300">
-      {JSON.stringify(value, null, 2)}
-    </pre>
+    <details className="group mt-1.5">
+      <summary className="cursor-pointer select-none text-[11px] font-medium text-subtle hover:text-muted">
+        {label}
+      </summary>
+      <pre className="mt-1 max-h-56 overflow-auto rounded-md bg-surface-2 p-2 font-mono text-[11px] leading-relaxed text-muted">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    </details>
   );
+}
+
+export function DecisionBadge({ decision }: { decision?: string }) {
+  if (!decision) return null;
+  const meta = OUTCOME_META[decision as Outcome];
+  return <Badge tone={meta?.tone ?? "neutral"}>{decision.toUpperCase()}</Badge>;
+}
+
+function argsSummary(args: Record<string, unknown> | undefined): string {
+  if (!args) return "";
+  return Object.entries(args)
+    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+    .join(", ");
 }
 
 function StepBody({ step }: { step: StepEvent }) {
   const p = step.payload || {};
   switch (step.step_type) {
     case "model":
-      return <p className="text-sm text-slate-300">{p.text}</p>;
+      return <p className="text-[13px] leading-relaxed text-fg/90">{p.text}</p>;
     case "tool_call":
       return (
-        <div>
-          <span className="font-mono text-xs text-sky-300">{p.tool}(…)</span>
-          {p.args && Object.keys(p.args).length > 0 && <Json value={p.args} />}
-        </div>
+        <code className="break-all font-mono text-xs leading-5 text-info">
+          {p.tool}({argsSummary(p.args)})
+        </code>
       );
-    case "policy_eval": {
+    case "policy_eval":
+    case "decision": {
       const r = p.result || {};
       return (
         <div>
-          <span className="font-mono text-xs text-slate-400">{p.tool}</span>
-          <DecisionBadge decision={r.decision} />
-          {Array.isArray(r.reasons) && (
-            <ul className="mt-1 list-disc pl-4 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="font-mono text-xs text-muted">{p.tool}</code>
+            <DecisionBadge decision={r.decision} />
+            {typeof r.amount === "number" && (
+              <span className="text-xs text-muted">${r.amount.toFixed(2)}</span>
+            )}
+          </div>
+          {Array.isArray(r.reasons) && r.reasons.length > 0 && (
+            <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-xs text-muted">
               {r.reasons.map((reason: string, i: number) => (
                 <li key={i}>{reason}</li>
               ))}
@@ -62,75 +96,78 @@ function StepBody({ step }: { step: StepEvent }) {
         </div>
       );
     }
-    case "decision": {
+    case "tool_result": {
       const r = p.result || {};
       return (
         <div>
-          <span className="font-mono text-xs text-slate-400">{p.tool}</span>
-          <DecisionBadge decision={r.decision} />
-          {Array.isArray(r.reasons) && (
-            <ul className="mt-1 list-disc pl-4 text-xs text-slate-400">
-              {r.reasons.map((reason: string, i: number) => (
-                <li key={i}>{reason}</li>
-              ))}
-            </ul>
+          <code className="font-mono text-xs text-muted">{p.tool}</code>
+          {r.error && (
+            <Badge tone="bad" className="ml-2">
+              {String(r.error)}
+            </Badge>
           )}
+          <Json value={r} label="Result" />
         </div>
       );
     }
     case "injection_flag":
       return (
-        <div className="text-xs text-rose-300">
-          Flagged patterns:{" "}
-          <span className="font-mono">{(p.patterns || []).join(", ")}</span>
-          <Json value={{ text: p.text }} />
-        </div>
+        <p className="text-xs text-bad">
+          Matched: <span className="font-mono">{(p.patterns || []).join(", ")}</span>. The
+          policy gate still decides.
+        </p>
       );
+    case "usage":
+      return (
+        <p className="font-mono text-[11px] text-subtle">
+          in {p.input_tokens} · out {p.output_tokens}
+        </p>
+      );
+    case "notice":
+      return <p className="text-xs text-info">{p.message}</p>;
+    case "output_correction":
+      return <p className="text-xs text-bad">{p.reason}</p>;
     case "error":
-      return <p className="text-sm text-rose-300">{p.message}</p>;
+      return <p className="text-xs text-bad">The model call failed ({p.error_type}).</p>;
     default:
-      return <Json value={p.result ?? p} />;
+      return <Json value={p} />;
   }
 }
 
-function DecisionBadge({ decision }: { decision?: string }) {
-  if (!decision) return null;
-  const cls = DECISION_COLOR[decision] || "text-slate-300 border-slate-600 bg-slate-800";
-  return (
-    <span
-      className={`ml-2 rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${cls}`}
-    >
-      {decision}
-    </span>
-  );
-}
-
-export default function ReasoningTimeline({ steps }: { steps: StepEvent[] }) {
-  if (steps.length === 0) {
-    return (
-      <p className="px-1 py-6 text-center text-sm text-slate-500">
-        No reasoning steps yet.
-      </p>
-    );
+export default function ReasoningTimeline({
+  steps,
+  hideUsage = false,
+}: {
+  steps: StepEvent[];
+  hideUsage?: boolean;
+}) {
+  const shown = hideUsage ? steps.filter((s) => s.step_type !== "usage") : steps;
+  if (shown.length === 0) {
+    return <p className="px-1 py-8 text-center text-sm text-subtle">No reasoning steps yet.</p>;
   }
   return (
-    <ol className="space-y-3">
-      {steps.map((step) => {
+    <ol className="relative space-y-3 before:absolute before:bottom-2 before:left-[13px] before:top-2 before:w-px before:bg-line">
+      {shown.map((step) => {
         const meta = STEP_META[step.step_type] || STEP_META.tool_result;
+        const Icon = meta.icon;
         return (
-          <li key={`${step.id}-${step.seq}`} className="flex gap-3">
-            <div className="mt-1.5 flex flex-col items-center">
-              <span className={`h-2.5 w-2.5 rounded-full ${meta.dot}`} />
-              <span className="mt-1 w-px flex-1 bg-slate-800" />
-            </div>
-            <div className="flex-1 rounded-lg border border-slate-800 bg-slate-900/50 p-3">
-              <div className="flex items-center justify-between">
-                <span className={`text-xs font-semibold uppercase tracking-wide ${meta.chip}`}>
+          <li key={`${step.id}-${step.seq}`} className="relative flex animate-fade-up gap-3">
+            <span
+              className={clsx(
+                "relative z-10 mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-4 ring-surface",
+                DOT[meta.tone],
+              )}
+            >
+              <Icon size={14} />
+            </span>
+            <div className="min-w-0 flex-1 pb-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-subtle">
                   {meta.label}
                 </span>
-                <span className="text-[11px] text-slate-600">#{step.seq}</span>
+                <span className="font-mono text-[10px] text-subtle">#{step.seq}</span>
               </div>
-              <div className="mt-1.5">
+              <div className="mt-0.5">
                 <StepBody step={step} />
               </div>
             </div>

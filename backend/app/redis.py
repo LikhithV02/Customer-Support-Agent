@@ -142,6 +142,11 @@ async def turns_in_flight() -> int:
 # Per-customer daily token budget
 # ---------------------------------------------------------------------------
 
+# The same counters also keep a global total across all customers, which the
+# public demo uses as a spend cap (`DEMO_GLOBAL_DAILY_TOKEN_BUDGET`).
+_GLOBAL = "__all__"
+
+
 def _budget_key(customer_id: str) -> str:
     day = datetime.now(timezone.utc).strftime("%Y%m%d")
     return f"budget:{customer_id}:{day}"
@@ -151,9 +156,13 @@ async def customer_tokens_today(customer_id: str) -> int:
     return int(await get_redis().get(_budget_key(customer_id)) or 0)
 
 
+async def global_tokens_today() -> int:
+    return await customer_tokens_today(_GLOBAL)
+
+
 async def add_customer_tokens(customer_id: str, tokens: int) -> None:
-    key = _budget_key(customer_id)
     pipe = get_redis().pipeline()
-    pipe.incrby(key, tokens)
-    pipe.expire(key, 2 * 86400)
+    for key in (_budget_key(customer_id), _budget_key(_GLOBAL)):
+        pipe.incrby(key, tokens)
+        pipe.expire(key, 2 * 86400)
     await pipe.execute()

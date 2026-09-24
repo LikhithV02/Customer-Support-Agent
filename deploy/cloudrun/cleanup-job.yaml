@@ -1,0 +1,21 @@
+# Purges demo sandboxes older than 24h. Triggered hourly by Cloud Scheduler
+# (created by bootstrap.sh).
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: ${SERVICE}-cleanup
+spec:
+  template:
+    spec:
+      taskCount: 1
+      template:
+        spec:
+          serviceAccountName: ${RUNTIME_SA}
+          maxRetries: 1
+          timeoutSeconds: 900
+          containers:
+            - image: ${IMAGE}
+              command: ["python"]
+              args: ["-m", "app.maintenance.retention", "--demo-hours", "24"]
+              env:
+                - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: acme-database-url, key: latest } } }
