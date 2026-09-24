@@ -11,6 +11,8 @@
  * In local dev (AUTH_MODE=dev) the UI can mint tokens via /api/dev/token.
  */
 
+import { apiUrl } from "./config";
+
 export type Role = "customer" | "admin";
 
 declare global {
@@ -72,7 +74,7 @@ window.addEventListener("message", (e: MessageEvent) => {
 
 /** Dev only: mint a token from the backend's /api/dev/token endpoint. */
 export async function devLogin(role: Role, customerId?: string): Promise<void> {
-  const res = await fetch("/api/dev/token", {
+  const res = await fetch(apiUrl("/api/dev/token"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(role === "admin" ? { admin: true } : { customer_id: customerId }),
@@ -83,7 +85,7 @@ export async function devLogin(role: Role, customerId?: string): Promise<void> {
 
 export async function devCustomers(): Promise<{ id: string; name: string; email: string }[] | null> {
   try {
-    const res = await fetch("/api/dev/customers");
+    const res = await fetch(apiUrl("/api/dev/customers"));
     return res.ok ? res.json() : null;
   } catch {
     return null;

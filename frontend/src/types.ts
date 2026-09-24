@@ -12,6 +12,7 @@ export interface StepEvent {
     | "usage"
     | "budget_exhausted"
     | "output_correction"
+    | "notice"
     | "error";
   node: string;
   payload: Record<string, any>;
@@ -46,9 +47,16 @@ export type AgentEvent =
   | ErrorEvent;
 
 export interface ChatMessage {
+  id: string;
   role: "user" | "assistant";
   content: string;
+  at: number;
+  /** Outcome of the turn this assistant message closed (see outcomeOf). */
+  outcome?: Outcome | null;
+  error?: boolean;
 }
+
+export type Outcome = "approved" | "denied" | "escalated" | "blocked" | "flagged";
 
 export interface ConversationSummary {
   id: string;
@@ -65,4 +73,46 @@ export interface ConversationDetail {
   customer_name: string | null;
   messages: { id: number; role: string; content: string; created_at: string }[];
   events: StepEvent[];
+}
+
+export type Scenario =
+  | "refundable"
+  | "final_sale"
+  | "high_value"
+  | "out_of_window"
+  | "already_refunded";
+
+export interface Order {
+  id: string;
+  product_name: string;
+  amount: number;
+  status: string;
+  order_date: string | null;
+  delivered_date: string | null;
+  is_final_sale: boolean;
+  refunded: boolean;
+  scenario: Scenario | null;
+}
+
+export interface DemoSession {
+  customer: { id: string; name: string; email: string };
+  orders: Order[];
+  token: string;
+  admin_token: string;
+  expires_in: number;
+  data_ttl_hours: number;
+}
+
+export interface Meta {
+  auth_mode: "dev" | "jwt" | "demo";
+  model: string;
+  demo: { session_ttl_s: number; data_ttl_hours: number } | null;
+}
+
+export interface AdminStats {
+  conversations: number;
+  messages: number;
+  decisions: Record<string, number>;
+  injection_flags: number;
+  tokens_used: number;
 }

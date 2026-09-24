@@ -2,6 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Semantic colour tokens (RGB channels so Tailwind opacity modifiers work). */
+:root {
+  --c-bg: 246 247 251;
+  --c-surface: 255 255 255;
+  --c-surface-2: 240 242 247;
+  --c-line: 224 228 237;
+  --c-fg: 15 23 42;
+  --c-muted: 71 85 105;
+  --c-subtle: 120 132 153;
+  --c-brand: 79 70 229;
+  --c-brand-solid: 79 70 229;
+  --c-ok: 4 138 96;
+  --c-warn: 180 100 4;
+  --c-bad: 214 32 72;
+  --c-info: 2 122 186;
+  color-scheme: light;
+}
+
+.dark {
+  --c-bg: 8 11 20;
+  --c-surface: 15 20 33;
+  --c-surface-2: 23 29 46;
+  --c-line: 38 46 66;
+  --c-fg: 226 232 240;
+  --c-muted: 156 168 190;
+  --c-subtle: 106 120 145;
+  --c-brand: 139 148 255;
+  --c-brand-solid: 91 88 235;
+  --c-ok: 52 211 153;
+  --c-warn: 251 191 36;
+  --c-bad: 251 113 133;
+  --c-info: 56 189 248;
+  color-scheme: dark;
+}
+
 html,
 body,
 #root {
@@ -10,6 +45,25 @@ body,
 
 body {
   margin: 0;
-  background-color: #0b1120;
-  color: #e2e8f0;
+  @apply bg-bg font-sans text-fg antialiased;
+}
+
+:focus-visible {
+  @apply outline-none ring-2 ring-brand/60 ring-offset-2 ring-offset-bg;
+}
+
+/* Thin, theme-aware scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--c-line)) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
 }

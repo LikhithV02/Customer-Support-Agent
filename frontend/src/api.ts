@@ -1,5 +1,14 @@
 import { getToken, type Role } from "./auth";
-import type { AgentEvent, ConversationDetail, ConversationSummary } from "./types";
+import { apiUrl } from "./config";
+import type {
+  AdminStats,
+  AgentEvent,
+  ConversationDetail,
+  ConversationSummary,
+  DemoSession,
+  Meta,
+  Order,
+} from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -15,6 +24,8 @@ export class ApiError extends Error {
 export function friendlyError(err: unknown): string {
   if (err instanceof ApiError) {
     switch (err.status) {
+      case 0:
+        return err.message;
       case 401:
         return "Your session has expired. Please sign in again.";
       case 403:
@@ -33,12 +44,18 @@ export function friendlyError(err: unknown): string {
   return (err as Error)?.message ?? "Something went wrong.";
 }
 
-async function request(role: Role, url: string, init: RequestInit = {}): Promise<Response> {
-  const token = getToken(role);
+async function request(role: Role | null, url: string, init: RequestInit = {}): Promise<Response> {
+  const token = role ? getToken(role) : null;
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (init.body) headers.set("Content-Type", "application/json");
-  const res = await fetch(url, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(url), { ...init, headers });
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") throw err;
+    throw new ApiError(0, "Can't reach the server. Check your connection and try again.");
+  }
   if (!res.ok) {
     let detail = `request failed: ${res.status}`;
     try {
@@ -137,4 +154,24 @@ export function subscribeToConversation(
   };
   void connect();
   return () => controller.abort();
+}
+
+export async function fetchMeta(): Promise<Meta> {
+  return (await request(null, "/api/meta")).json();
+}
+
+export async function createDemoSession(turnstileToken?: string): Promise<DemoSession> {
+  const res = await request(null, "/api/demo/session", {
+    method: "POST",
+    body: JSON.stringify({ turnstile_token: turnstileToken ?? null }),
+  });
+  return res.json();
+}
+
+export async function fetchOrders(): Promise<Order[]> {
+  return (await request("customer", "/api/me/orders")).json();
+}
+
+export async function fetchStats(): Promise<AdminStats> {
+  return (await request("admin", "/api/admin/stats")).json();
 }
