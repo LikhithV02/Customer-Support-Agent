@@ -18,3 +18,4 @@ httpx==0.28.1
 rapidfuzz==3.10.1
 prometheus-client==0.21.1
 sentry-sdk==2.19.2
+opik==2.2.95

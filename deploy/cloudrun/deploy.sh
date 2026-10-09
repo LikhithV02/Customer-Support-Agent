@@ -17,10 +17,19 @@ export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/backend:${TAG}"
 export RUNTIME_SA="acme-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
 export CORS_ORIGINS="${CORS_ORIGINS:-}"
 export DEMO_GLOBAL_DAILY_TOKEN_BUDGET="${DEMO_GLOBAL_DAILY_TOKEN_BUDGET:-1500000}"
+# Comet-hosted Opik workspace; tracing stays off when unset. The API key comes
+# from the acme-opik-api-key secret (bootstrap.sh).
+OPIK_WORKSPACE="${OPIK_WORKSPACE:-}"
+OPIK_ENV=""
+if [ -n "$OPIK_WORKSPACE" ]; then
+  OPIK_ENV="            - { name: OPIK_WORKSPACE, value: \"${OPIK_WORKSPACE}\" }
+            - { name: OPIK_API_KEY, valueFrom: { secretKeyRef: { name: acme-opik-api-key, key: latest } } }"
+fi
+export OPIK_ENV
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 RENDERED="$(mktemp -d)"
-VARS='${SERVICE} ${IMAGE} ${RUNTIME_SA} ${CORS_ORIGINS} ${DEMO_GLOBAL_DAILY_TOKEN_BUDGET}'
+VARS='${SERVICE} ${IMAGE} ${RUNTIME_SA} ${CORS_ORIGINS} ${DEMO_GLOBAL_DAILY_TOKEN_BUDGET} ${OPIK_ENV}'
 
 if [ -z "${SKIP_BUILD:-}" ]; then
   echo "==> Building ${IMAGE}"

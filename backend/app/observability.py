@@ -51,6 +51,9 @@ TURN_LATENCY = Histogram(
 )
 TURNS_IN_FLIGHT = Gauge("agent_turns_in_flight", "Agent turns running in this process")
 LLM_TOKENS = Counter("llm_tokens_total", "LLM tokens", ["direction"])
+LLM_FALLBACKS = Counter(
+    "llm_fallback_total", "Model responses served by the fallback provider", ["model"]
+)
 TOOL_CALLS = Counter("agent_tool_calls_total", "Tool calls", ["tool"])
 REFUND_DECISIONS = Counter("refund_decisions_total", "Refund decisions", ["decision"])
 INJECTION_FLAGS = Counter("injection_flags_total", "Messages flagged as injection attempts")

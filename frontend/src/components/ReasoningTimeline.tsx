@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Brain,
   CircleDollarSign,
+  ExternalLink,
   Gauge,
   Info,
   ShieldAlert,
@@ -26,7 +27,11 @@ const STEP_META: Record<string, { label: string; icon: LucideIcon; tone: Tone }>
   budget_exhausted: { label: "Budget exhausted", icon: Gauge, tone: "warn" },
   output_correction: { label: "Output corrected", icon: ShieldAlert, tone: "bad" },
   notice: { label: "Notice", icon: Info, tone: "info" },
+  trace: { label: "Trace", icon: ExternalLink, tone: "brand" },
 };
+
+// Operator-only steps, hidden in the customer-facing panel.
+const INTERNAL_STEPS = new Set(["usage", "trace"]);
 
 const DOT: Record<Tone, string> = {
   ok: "bg-ok/15 text-ok",
@@ -121,6 +126,7 @@ function StepBody({ step }: { step: StepEvent }) {
       return (
         <p className="font-mono text-[11px] text-subtle">
           in {p.input_tokens} · out {p.output_tokens}
+          {p.model ? ` · ${p.model}` : ""}
         </p>
       );
     case "notice":
@@ -129,6 +135,19 @@ function StepBody({ step }: { step: StepEvent }) {
       return <p className="text-xs text-bad">{p.reason}</p>;
     case "error":
       return <p className="text-xs text-bad">The model call failed ({p.error_type}).</p>;
+    case "trace":
+      return p.url ? (
+        <a
+          href={p.url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+        >
+          Open in Opik <ExternalLink size={12} />
+        </a>
+      ) : (
+        <code className="font-mono text-[11px] text-subtle">{p.trace_id}</code>
+      );
     default:
       return <Json value={p} />;
   }
@@ -141,7 +160,7 @@ export default function ReasoningTimeline({
   steps: StepEvent[];
   hideUsage?: boolean;
 }) {
-  const shown = hideUsage ? steps.filter((s) => s.step_type !== "usage") : steps;
+  const shown = hideUsage ? steps.filter((s) => !INTERNAL_STEPS.has(s.step_type)) : steps;
   if (shown.length === 0) {
     return <p className="px-1 py-8 text-center text-sm text-subtle">No reasoning steps yet.</p>;
   }

@@ -19,7 +19,9 @@ const MAX_CHARS = 2000;
 const uid = () => Math.random().toString(36).slice(2);
 
 function statusLine(steps: StepEvent[]): string {
-  const last = [...steps].reverse().find((s) => s.step_type !== "usage");
+  const last = [...steps]
+    .reverse()
+    .find((s) => s.step_type !== "usage" && s.step_type !== "trace");
   if (!last) return "Thinking…";
   switch (last.step_type) {
     case "tool_call":

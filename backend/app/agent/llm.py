@@ -15,6 +15,8 @@ from functools import lru_cache
 
 from app.config import get_settings
 
+FAKE_MODEL_NAME = "scripted-fake"
+
 
 def _build(provider: str):
     settings = get_settings()
@@ -81,6 +83,17 @@ def get_fallback_model():
     if not fallback or fallback == settings.llm_provider:
         return None
     return get_model(fallback)
+
+
+def primary_model_name() -> str:
+    """Model id the primary provider answers with (prefix-matched against
+    `response_metadata`, since providers may append a dated version)."""
+    settings = get_settings()
+    return {
+        "anthropic": settings.anthropic_model,
+        "openai": settings.openai_model,
+        "fake": FAKE_MODEL_NAME,
+    }.get(settings.llm_provider, "")
 
 
 def use_prompt_caching() -> bool:

@@ -13,6 +13,7 @@ from sqlalchemy import func, select, text
 from sse_starlette.sse import EventSourceResponse
 
 from app import redis as shared
+from app import tracing
 from app.agent.runner import (
     ConversationNotFound,
     create_conversation,
@@ -68,10 +69,12 @@ STREAM_ERROR_MESSAGE = (
 async def lifespan(_app: FastAPI):
     configure_logging()
     configure_sentry()
+    tracing.configure()
     if settings.seed_on_startup:
         await seed_if_empty(create_tables=True)
     log_event(logger, "startup", env=settings.env, llm_provider=settings.llm_provider)
     yield
+    tracing.flush()
     await shared.close_redis()
     await db.dispose()
 

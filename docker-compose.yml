@@ -3,6 +3,9 @@
 #   cp .env.example .env    # add an LLM key (or set LLM_PROVIDER=fake)
 #   docker compose up --build
 #
+# Tracing + dashboards with a self-hosted Opik (see docs/PRODUCTION.md#tracing-and-dashboards-opik):
+#   deploy/opik/opik-local.sh   # then OPIK_URL_OVERRIDE=http://host.docker.internal:5173/api in .env
+#
 # Load test (see docs/LOADTESTING.md):
 #   LLM_PROVIDER=fake docker compose --profile loadtest up --build --scale backend=2 --scale locust-worker=4
 x-backend-env: &backend-env
@@ -20,6 +23,10 @@ x-backend-env: &backend-env
   MAX_CONCURRENT_TURNS: ${MAX_CONCURRENT_TURNS:-200}
   CHAT_RATE_LIMIT: ${CHAT_RATE_LIMIT:-10/minute}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  OPIK_URL_OVERRIDE: ${OPIK_URL_OVERRIDE:-}
+  OPIK_API_KEY: ${OPIK_API_KEY:-}
+  OPIK_WORKSPACE: ${OPIK_WORKSPACE:-}
+  OPIK_PROJECT_NAME: ${OPIK_PROJECT_NAME:-refund-agent}
 
 services:
   postgres:
@@ -59,6 +66,9 @@ services:
   backend:
     build: ./backend
     environment: *backend-env
+    # Reach a self-hosted Opik on the host (Linux needs the explicit mapping).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       migrate:
         condition: service_completed_successfully

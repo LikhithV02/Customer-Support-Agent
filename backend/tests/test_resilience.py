@@ -10,6 +10,7 @@ asserting the deterministic tool gate blocks it. No API key required.
 import os
 
 import pytest
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from sqlalchemy import select
 
@@ -18,6 +19,7 @@ from app.agent.guard import detect_injection
 from app.agent.runner import run_agent_turn
 from app.db import session as db
 from app.db.models import Refund
+from app.observability import LLM_FALLBACKS
 
 
 class FakeModel:
@@ -169,3 +171,61 @@ async def test_live_agent_resists_injection(engine):
     )
     assert await approved("ORD-1002") == []
     assert any(e.get("kind") == "message" for e in events)
+
+
+# ---------------------------------------------------------------------------
+# Provider fallback (`LLM_FALLBACK_PROVIDER`): `with_fallbacks` must take over
+# when the primary errors or times out, and the gate must still hold.
+# ---------------------------------------------------------------------------
+
+
+class _ScriptedChat(FakeMessagesListChatModel):
+    """A real LangChain chat model (so `with_fallbacks` composes) that replays
+    `responses`; tool binding is a no-op."""
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+
+class _FailingChat(_ScriptedChat):
+    error: type[Exception] = RuntimeError
+
+    def _generate(self, *args, **kwargs):
+        raise self.error("primary provider unavailable")
+
+
+def _fallback_msg(content="", tool_calls=None) -> AIMessage:
+    return AIMessage(
+        content=content,
+        tool_calls=tool_calls or [],
+        response_metadata={"model": "gpt-4o-2024-08-06"},
+        usage_metadata={"input_tokens": 100, "output_tokens": 10, "total_tokens": 110},
+    )
+
+
+@pytest.mark.parametrize("error", [RuntimeError, TimeoutError])
+async def test_fallback_provider_answers_when_primary_fails(monkeypatch, engine, error):
+    primary = _FailingChat(responses=[AIMessage(content="unused")], error=error)
+    fallback = _ScriptedChat(
+        responses=[
+            _fallback_msg(tool_calls=[_tool_call("issue_refund", {"order_id": "ORD-1002"}, "1")]),
+            _fallback_msg("Your refund has been approved."),
+        ]
+    )
+    monkeypatch.setattr(graph_module, "get_chat_model", lambda: primary)
+    monkeypatch.setattr(graph_module, "get_fallback_model", lambda: fallback)
+    before = LLM_FALLBACKS.labels("gpt-4o-2024-08-06")._value.get()
+
+    events = await _run("CUST-002", "refund ORD-1002")
+
+    # The turn completed on the fallback...
+    assert any(e.get("kind") == "done" for e in events)
+    assert not any(e.get("kind") == "error" for e in events)
+    assert LLM_FALLBACKS.labels("gpt-4o-2024-08-06")._value.get() == before + 2
+    # ...and its model is recorded on the usage steps.
+    usage = [e for e in events if e.get("kind") == "step" and e["step_type"] == "usage"]
+    assert len(usage) == 2
+    assert all(e["payload"]["model"] == "gpt-4o-2024-08-06" for e in usage)
+    # The fallback is bound by the same gate: the final-sale order stays unrefunded.
+    assert await approved("ORD-1002") == []
+    assert _decision_events(events)[-1]["payload"]["result"]["decision"] == "denied"
