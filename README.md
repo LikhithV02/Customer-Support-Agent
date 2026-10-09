@@ -266,6 +266,18 @@ TEST_REDIS_URL=redis://localhost:6379/1 pytest -q
 The one live end-to-end test (`test_live_agent_resists_injection`) runs only when
 an API key is present, and is skipped otherwise.
 
+### Golden-set evals
+
+81 conversations (policy edge cases, injection attacks, multi-turn pressure) run
+through the real agent on every PR. They score tool use, the final decision
+against the policy and the refund ledger, false "approved" claims, and tone (an
+LLM judge). A regression against the committed baseline fails the build. See
+[`backend/evals/README.md`](backend/evals/README.md).
+
+```bash
+python -m evals.run && python -m evals.report   # from backend/
+```
+
 A full record of every verification step, the edge-case coverage matrix, results,
 and fixes is in [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
 

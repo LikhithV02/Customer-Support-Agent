@@ -13,3 +13,4 @@ landing/dist/
 loadtest/results/
 dump.rdb
 .opik/
+backend/evals/results.json
