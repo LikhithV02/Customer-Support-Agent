@@ -123,6 +123,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = True
     sentry_dsn: str = ""
+    # Opik tracing + dashboards (app/tracing.py). Off unless OPIK_URL_OVERRIDE
+    # (self-hosted) or OPIK_API_KEY (Comet-hosted) is set.
+    opik_url_override: str = ""
+    opik_api_key: str = ""
+    opik_workspace: str = ""
+    opik_project_name: str = "refund-agent"
 
     @model_validator(mode="after")
     def _check_prod(self) -> "Settings":
@@ -159,6 +165,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def opik_enabled(self) -> bool:
+        return bool(self.opik_url_override or self.opik_api_key)
 
     @property
     def is_demo(self) -> bool:

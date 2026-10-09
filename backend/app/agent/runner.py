@@ -27,6 +27,9 @@ Guardrails enforced here (see `docs/HARDENING.md`):
   a clear correction note is prepended (and an `output_correction` event is
   emitted). The deterministic gate already protects the money; this extends the
   same guarantee to the chat surface.
+
+When Opik is configured (`app/tracing.py`) the turn is also traced there, and a
+final `trace` step links the timeline to it.
 """
 
 from __future__ import annotations
@@ -43,9 +46,10 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from sqlalchemy import insert, select, update
 
 from app import redis as shared
+from app import tracing
 from app.agent.graph import get_agent
 from app.agent.guard import detect_injection
-from app.agent.llm import use_prompt_caching
+from app.agent.llm import primary_model_name, use_prompt_caching
 from app.agent.prompts import get_system_prompt
 from app.agent.tools import ToolContext, tool_config
 from app.config import get_settings
@@ -54,6 +58,7 @@ from app.db.models import Conversation, Message, ReasoningEvent, utcnow
 from app.events import broadcaster
 from app.observability import (
     INJECTION_FLAGS,
+    LLM_FALLBACKS,
     LLM_TOKENS,
     REFUND_DECISIONS,
     TOOL_CALLS,
@@ -299,24 +304,41 @@ async def run_agent_turn(
 
     ctx = ToolContext(conversation_id=cid, verified_customer_id=customer_id)
     agent = get_agent(scripted=scripted)
+    tracer = tracing.tracer_for_turn(cid, customer_id, scripted=scripted)
+    run_config = {
+        "recursion_limit": settings.agent_recursion_limit,
+        "run_name": "refund-turn",
+        **tool_config(ctx),
+    }
+    if tracer is not None:
+        run_config["callbacks"] = [tracer]
+    primary_model = primary_model_name()
 
     # History already includes the user message we just saved.
     messages = [_system_message()] + await _history(cid)
 
     final_text = ""
     approved_in_turn = False
+    decision_in_turn: str | None = None
+    fallback_in_turn = False
     TURNS_IN_FLIGHT.inc()
     try:
         async with asyncio.timeout(settings.turn_timeout_s):
             async for chunk in agent.astream(
                 {"messages": messages},
                 stream_mode="updates",
-                config={"recursion_limit": settings.agent_recursion_limit, **tool_config(ctx)},
+                config=run_config,
             ):
                 for node, update_ in chunk.items():
                     for msg in update_.get("messages", []):
                         if isinstance(msg, AIMessage):
                             usage = getattr(msg, "usage_metadata", None)
+                            meta = getattr(msg, "response_metadata", None) or {}
+                            model = meta.get("model") or meta.get("model_name") or ""
+                            if model and not scripted and not model.startswith(primary_model):
+                                # `with_fallbacks` answered from the secondary provider.
+                                fallback_in_turn = True
+                                LLM_FALLBACKS.labels(model).inc()
                             if isinstance(msg.content, str) and msg.content.strip():
                                 yield await emit("model", node, {"text": msg.content})
                                 final_text = msg.content
@@ -346,7 +368,7 @@ async def run_agent_turn(
                                 yield await emit(
                                     "usage",
                                     node,
-                                    {"input_tokens": tin, "output_tokens": tout},
+                                    {"input_tokens": tin, "output_tokens": tout, "model": model},
                                     tokens=tin + tout,
                                 )
                         elif isinstance(msg, ToolMessage):
@@ -360,6 +382,7 @@ async def run_agent_turn(
                                 decision = result.get("decision")
                                 if decision:
                                     REFUND_DECISIONS.labels(decision).inc()
+                                    decision_in_turn = decision
                                 if msg.name == "issue_refund" and decision == "approved":
                                     approved_in_turn = True
                             yield await emit(
@@ -379,6 +402,17 @@ async def run_agent_turn(
         TURNS.labels("error").inc()
         TURN_LATENCY.observe(time.perf_counter() - started)
         yield await emit("error", "agent", {"error_type": type(exc).__name__})
+        trace = tracing.finish_turn(
+            tracer,
+            tracing.TurnOutcome(
+                decision=decision_in_turn,
+                injection_flagged=bool(flags),
+                fallback=fallback_in_turn,
+                error=True,
+            ),
+        )
+        if trace:
+            yield await emit("trace", "opik", trace)
         yield {"kind": "error", "message": _ERROR_MESSAGE}
         return
     finally:
@@ -389,7 +423,8 @@ async def run_agent_turn(
 
     # Output sanitizer: don't let the assistant *claim* an approval that the
     # refund system did not actually record.
-    if not approved_in_turn and _APPROVAL_CLAIM.search(final_text):
+    corrected = not approved_in_turn and bool(_APPROVAL_CLAIM.search(final_text))
+    if corrected:
         yield await emit(
             "output_correction",
             "sanitizer",
@@ -400,6 +435,18 @@ async def run_agent_turn(
             },
         )
         final_text = _CORRECTION_PREFIX + final_text
+
+    trace = tracing.finish_turn(
+        tracer,
+        tracing.TurnOutcome(
+            decision=decision_in_turn,
+            corrected=corrected,
+            injection_flagged=bool(flags),
+            fallback=fallback_in_turn,
+        ),
+    )
+    if trace:
+        yield await emit("trace", "opik", trace)
 
     for event in await finish(final_text, "ok"):
         yield event

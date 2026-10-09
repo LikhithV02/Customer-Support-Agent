@@ -1,3 +1,4 @@
+import hashlib
 from functools import lru_cache
 from pathlib import Path
 
@@ -74,3 +75,12 @@ Be concise, friendly, and professional."""
 def get_system_prompt() -> str:
     policy = _POLICY_FILE.read_text()
     return _SYSTEM_TEMPLATE.format(policy=policy)
+
+
+@lru_cache
+def prompt_version() -> str:
+    """Short content hash of the system prompt (template + policy).
+
+    Tags traces and eval runs so results can be compared across prompt changes.
+    """
+    return hashlib.sha256(get_system_prompt().encode()).hexdigest()[:8]

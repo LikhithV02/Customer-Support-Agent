@@ -12,3 +12,4 @@ landing/node_modules/
 landing/dist/
 loadtest/results/
 dump.rdb
+.opik/

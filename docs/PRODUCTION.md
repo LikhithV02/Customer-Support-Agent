@@ -164,7 +164,9 @@ Two separate ceilings:
   `http_requests_total`, `http_request_duration_seconds`, `agent_turns_total{outcome}`,
   `agent_turn_duration_seconds`, `agent_turns_in_flight`, `llm_tokens_total`,
   `agent_tool_calls_total`, `refund_decisions_total{decision}`,
-  `injection_flags_total`, `chat_rejections_total{reason}`, `sse_streams_open`.
+  `injection_flags_total`, `chat_rejections_total{reason}`, `sse_streams_open`,
+  `llm_fallback_total{model}` (responses served by `LLM_FALLBACK_PROVIDER`).
+- **Traces, cost and dashboards** — Opik; see [below](#tracing-and-dashboards-opik).
 - **Probes** — `/api/health/live` (process up), `/api/health/ready` (DB + Redis).
 - **Errors** — set `SENTRY_DSN`. For distributed tracing, run under
   `opentelemetry-instrument` with `OTEL_EXPORTER_OTLP_ENDPOINT` set.
@@ -178,6 +180,43 @@ Suggested alerts:
 | Slow turns | `histogram_quantile(0.95, rate(agent_turn_duration_seconds_bucket[5m])) > 20` |
 | 5xx | `rate(http_requests_total{status=~"5.."}[5m]) > 0` |
 | Readiness flapping | pods not ready > 2 min |
+| Primary provider down | `rate(llm_fallback_total[5m]) > 0` |
+
+### Tracing and dashboards (Opik)
+
+[Opik](https://github.com/comet-ml/opik) (Apache-2.0) is optional. With it on,
+every agent turn becomes a trace: model calls with token usage and **estimated
+cost**, tool calls, and the graph steps between them. All turns of a
+conversation share one thread. Each trace is tagged with the provider,
+`prompt:<hash>` (a hash of the system prompt and policy, so prompt changes can be
+compared), `live`/`scripted` and `demo`. After the turn, its outcome is logged as
+0/1 feedback scores: `refund_approved|denied|escalated`, `injection_flagged`,
+`sanitizer_correction`, `fallback_used` and `turn_error`. The admin timeline ends
+each turn with an **Open in Opik** link (except in the public demo).
+
+Opik only reports. The `reasoning_events` table and Redis pub/sub are still the
+audit ledger and the live admin stream, and token budgets are still enforced in
+the app. If Opik is down or misconfigured, turns go on unaffected and a warning
+is logged.
+
+| Setup | Settings |
+|---|---|
+| Self-hosted (local) | `deploy/opik/opik-local.sh` starts Opik's own stack, pinned to the SDK version (UI at http://localhost:5173). Set `OPIK_URL_OVERRIDE=http://host.docker.internal:5173/api` (compose) or `http://localhost:5173/api` (bare uvicorn). |
+| Comet-hosted | `OPIK_API_KEY`, `OPIK_WORKSPACE`. On Cloud Run, `bootstrap.sh` stores the key as the `acme-opik-api-key` secret, and the `DEMO_OPIK_WORKSPACE` repo variable turns it on. |
+| Both | `OPIK_PROJECT_NAME` (default `refund-agent`). |
+
+**Dashboards as code.** `python -m scripts.opik_dashboards` (from `backend/`,
+with the same `OPIK_*` settings) creates or rebuilds the *Refund agent:
+operations* dashboard:
+- **Cost and usage:** spend, turns, conversations, LLM calls per turn; cost over time and by tag (provider, prompt version); LLM calls by model (a fallback model showing up means the primary failed); tokens; turns by tag.
+- **Outcomes:** approval and escalation rates, injection attempts, decision mix, guardrail hits.
+- **Latency and reliability:** p50/p99, errors, turn and LLM-call duration, fallback and error rates.
+
+Cost figures are Opik's estimates from its model price table. Provider invoices
+are authoritative.
+
+**Data.** Traces contain conversation text. The demo's customers are synthetic.
+For real customers, self-host Opik inside your network, or don't enable it.
 
 ---
 

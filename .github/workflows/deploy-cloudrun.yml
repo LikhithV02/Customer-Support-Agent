@@ -29,6 +29,7 @@ jobs:
       REGION: ${{ vars.GCP_REGION || 'us-central1' }}
       CORS_ORIGINS: ${{ vars.DEMO_CORS_ORIGINS }}
       DEMO_GLOBAL_DAILY_TOKEN_BUDGET: ${{ vars.DEMO_GLOBAL_DAILY_TOKEN_BUDGET || '1500000' }}
+      OPIK_WORKSPACE: ${{ vars.DEMO_OPIK_WORKSPACE }}
       TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4

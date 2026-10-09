@@ -13,6 +13,7 @@ export interface StepEvent {
     | "budget_exhausted"
     | "output_correction"
     | "notice"
+    | "trace"
     | "error";
   node: string;
   payload: Record<string, any>;

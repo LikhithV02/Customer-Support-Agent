@@ -57,6 +57,15 @@ put_secret() {
 put_secret acme-database-url "Neon DATABASE_URL (postgresql://…?sslmode=require, the DIRECT host)"
 put_secret acme-redis-url "Upstash REDIS_URL (rediss://default:…@….upstash.io:6379)"
 put_secret acme-anthropic-api-key "ANTHROPIC_API_KEY"
+# Optional: Comet-hosted Opik for traces and cost dashboards.
+read -r -s -p "OPIK_API_KEY (optional, blank to skip): " opik_key; echo
+if [ -n "$opik_key" ] || gcloud secrets describe acme-opik-api-key >/dev/null 2>&1; then
+  gcloud secrets describe acme-opik-api-key >/dev/null 2>&1 ||
+    gcloud secrets create acme-opik-api-key --replication-policy automatic >/dev/null
+  [ -n "$opik_key" ] && printf '%s' "$opik_key" | gcloud secrets versions add acme-opik-api-key --data-file - >/dev/null
+  gcloud secrets add-iam-policy-binding acme-opik-api-key --member "serviceAccount:${RUNTIME_SA}" \
+    --role roles/secretmanager.secretAccessor >/dev/null
+fi
 if ! gcloud secrets describe acme-jwt-secret >/dev/null 2>&1; then
   gcloud secrets create acme-jwt-secret --replication-policy automatic >/dev/null
   openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add acme-jwt-secret --data-file - >/dev/null
@@ -97,6 +106,7 @@ Done. Set these GitHub repository *variables* (Settings → Secrets and variable
   GCP_WIF_PROVIDER   = projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/providers/${PROVIDER}
   GCP_DEPLOY_SA      = ${DEPLOY_SA}
   DEMO_CORS_ORIGINS  = https://<your-app>.vercel.app,https://<you>.github.io
+  DEMO_OPIK_WORKSPACE = <your Comet workspace>   (optional; enables Opik tracing)
 
 Then push to main (or run the "Deploy backend (Cloud Run)" workflow) to deploy.
 The cleanup scheduler starts working after the first deploy creates the job.

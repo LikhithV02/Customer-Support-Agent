@@ -19,6 +19,8 @@ import uuid
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from app.agent.llm import FAKE_MODEL_NAME
+
 _ORDER_RE = re.compile(r"\b[A-Z]{2,4}-\d{3,}(?:-[A-Z0-9]+)?\b", re.I)
 _REFUND_RE = re.compile(r"\b(refund|return|money back)\b", re.I)
 _ORDERS_RE = re.compile(r"\b(orders?|purchases?|bought)\b", re.I)
@@ -58,6 +60,7 @@ class ScriptedFakeChatModel:
             "output_tokens": 40,
             "total_tokens": chars // 4 + 40,
         }
+        msg.response_metadata = {"model": FAKE_MODEL_NAME}
         return msg
 
     def _decide(self, messages) -> AIMessage:
