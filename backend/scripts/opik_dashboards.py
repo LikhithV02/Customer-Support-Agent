@@ -17,7 +17,7 @@ from __future__ import annotations
 import sys
 
 from app.config import get_settings
-from app.tracing import quiet_sdk
+from app.tracing import opik_host, quiet_sdk
 
 NAME = "Refund agent: operations"
 
@@ -117,7 +117,7 @@ def main() -> int:
     client = opik.Opik(
         project_name=settings.opik_project_name,
         workspace=settings.opik_workspace or None,
-        host=settings.opik_url_override or None,
+        host=opik_host(),
         api_key=settings.opik_api_key or None,
     )
     layout = _sections()

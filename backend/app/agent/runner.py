@@ -105,6 +105,19 @@ _APPROVAL_CLAIM = re.compile(
     re.I,
 )
 
+# A claim preceded by a negation ("No refund was issued", "not a single refund
+# has been processed") is a denial, not a claim.
+_NEGATED = re.compile(r"\b(?:no|not|never|without|nor)\b[\s\w,'-]{0,12}$", re.I)
+
+
+def claims_approval(text: str) -> bool:
+    """True if `text` affirmatively says a refund was granted."""
+    return any(
+        not _NEGATED.search(text[max(0, m.start() - 24) : m.start()])
+        for m in _APPROVAL_CLAIM.finditer(text)
+    )
+
+
 _BUDGET_MESSAGE = (
     "I'm sorry, this conversation has reached its usage limit for the day. "
     "Please start a new chat or contact a human specialist if you still need help."
@@ -423,7 +436,7 @@ async def run_agent_turn(
 
     # Output sanitizer: don't let the assistant *claim* an approval that the
     # refund system did not actually record.
-    corrected = not approved_in_turn and bool(_APPROVAL_CLAIM.search(final_text))
+    corrected = not approved_in_turn and claims_approval(final_text)
     if corrected:
         yield await emit(
             "output_correction",

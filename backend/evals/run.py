@@ -5,7 +5,8 @@
     python -m evals.run --tags injection --parallel 4
 
 - live: the configured provider (`LLM_PROVIDER`, default anthropic). Every case,
-  plus the LLM-judged `tone` score (`EVAL_JUDGE_MODEL`, default claude-haiku-5-5).
+  plus the LLM-judged `tone` score (`EVAL_JUDGE_MODEL`; defaults to
+  claude-haiku-5-5, or gemini-3.8-flash when LLM_PROVIDER=gemini).
   A case that fails a deterministic check is retried once with fresh orders, to
   absorb sampling noise.
 - scripted: the deterministic fake model. Skips `live_only` cases and `tone`.
@@ -160,7 +161,9 @@ def _log_to_opik(results: dict, cases) -> str | None:
         def score(self, scores, **_ignored):
             s = scores.get(self.name) or {}
             if s.get("value") is None:
-                raise ValueError(s.get("reason", "not scored"))
+                return score_result.ScoreResult(
+                    name=self.name, value=0.0, reason=s.get("reason", "not scored"), scoring_failed=True
+                )
             return score_result.ScoreResult(name=self.name, value=s["value"], reason=s["reason"])
 
     by_id = {r["id"]: r for r in results["cases"]}
@@ -230,6 +233,7 @@ def main() -> int:
     from app.agent.prompts import prompt_version
     from app.config import get_settings
     from evals.harness import load_cases
+    from evals.metrics import judge_model
 
     cases = load_cases()
     if args.tags:
@@ -254,7 +258,7 @@ def main() -> int:
         "mode": mode,
         "provider": settings.llm_provider,
         "model": model,
-        "judge_model": os.getenv("EVAL_JUDGE_MODEL", "claude-haiku-5-5") if mode == "live" else None,
+        "judge_model": judge_model() if mode == "live" else None,
         "prompt_version": prompt_version(),
         "git_sha": sha,
         "experiment": args.experiment or f"{mode}-{sha[:7]}-{int(started)}",

@@ -37,9 +37,7 @@ spec:
           env:
             - { name: ENV, value: prod }
             - { name: AUTH_MODE, value: demo }
-            - { name: LLM_PROVIDER, value: anthropic }
-            # Provider errors fall back to the scripted model, so the demo never breaks.
-            - { name: LLM_FALLBACK_PROVIDER, value: fake }
+            # Latency of the scripted model (the default fallback, and the demo-budget mode).
             - { name: FAKE_LLM_LATENCY_MS, value: "400" }
             - { name: CORS_ORIGINS, value: "${CORS_ORIGINS}" }
             # Cloud Run's front end appends the real client IP to X-Forwarded-For.
@@ -57,7 +55,9 @@ spec:
             - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: acme-jwt-secret, key: latest } } }
             - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: acme-database-url, key: latest } } }
             - { name: REDIS_URL, valueFrom: { secretKeyRef: { name: acme-redis-url, key: latest } } }
-            - { name: ANTHROPIC_API_KEY, valueFrom: { secretKeyRef: { name: acme-anthropic-api-key, key: latest } } }
+            # Model provider, fallback and their keys: rendered by deploy.sh from
+            # LLM_PROVIDER / LLM_FALLBACK_PROVIDER (default anthropic → fake).
+${LLM_ENV}
             # Opik tracing (optional): deploy.sh renders OPIK_WORKSPACE + OPIK_API_KEY
             # here when OPIK_WORKSPACE is set, and nothing otherwise.
 ${OPIK_ENV}

@@ -189,8 +189,10 @@ class _ScriptedChat(FakeMessagesListChatModel):
 
 class _FailingChat(_ScriptedChat):
     error: type[Exception] = RuntimeError
+    attempts: int = 0
 
     def _generate(self, *args, **kwargs):
+        self.attempts += 1
         raise self.error("primary provider unavailable")
 
 
@@ -229,3 +231,21 @@ async def test_fallback_provider_answers_when_primary_fails(monkeypatch, engine,
     # The fallback is bound by the same gate: the final-sale order stays unrefunded.
     assert await approved("ORD-1002") == []
     assert _decision_events(events)[-1]["payload"]["result"]["decision"] == "denied"
+    # The circuit breaker opened after the first failure: the turn's second model
+    # call went straight to the fallback instead of waiting on the primary again.
+    assert primary.attempts == 1
+
+
+async def test_primary_is_retried_after_the_cooldown(monkeypatch, engine):
+    primary = _FailingChat(responses=[AIMessage(content="unused")])
+    fallback = _ScriptedChat(responses=[_fallback_msg("Hello! How can I help?")])
+    monkeypatch.setattr(graph_module, "get_chat_model", lambda: primary)
+    monkeypatch.setattr(graph_module, "get_fallback_model", lambda: fallback)
+
+    await _run("CUST-001", "hi")
+    assert primary.attempts == 1 and graph_module.breaker.is_open()
+    await _run("CUST-001", "hi again")
+    assert primary.attempts == 1  # still cooling down: skipped
+    graph_module.breaker.open_until = 0.0  # cooldown elapsed
+    await _run("CUST-001", "and again")
+    assert primary.attempts == 2

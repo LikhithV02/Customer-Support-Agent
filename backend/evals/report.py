@@ -10,7 +10,8 @@ Gate:
   RATE_TOLERANCE, the mean `tone` score at most TONE_TOLERANCE.
 - Live runs: at most MAX_JUDGE_FAILURES of cases without a tone score.
 
-Without a baseline for the mode only the floors apply (a warning says so).
+Baselines are kept per mode, and live ones per model (`live:<model>`), since
+models differ. Without a matching baseline only the floors apply (with a warning).
 The Markdown summary also goes to $GITHUB_STEP_SUMMARY when it's set.
 """
 
@@ -29,6 +30,10 @@ RATE_TOLERANCE = 0.02
 TONE_TOLERANCE = 0.03
 MAX_JUDGE_FAILURES = 0.10
 REGRESSION_METRICS = ("decision_matches_policy", "tool_correctness")
+
+
+def baseline_key(results: dict) -> str:
+    return "scripted" if results["mode"] == "scripted" else f"live:{results['model']}"
 
 
 def _passed(case: dict) -> bool:
@@ -116,7 +121,7 @@ def markdown(results: dict, summary: dict, baseline: dict | None, failures: list
             f"| {_pct(r['ledger_safe'])} |"
         )
     if not baseline:
-        lines += ["", f"⚠️ No `{results['mode']}` baseline yet, so only the hard floors were checked. "
+        lines += ["", f"⚠️ No `{baseline_key(results)}` baseline yet, so only the hard floors were checked. "
                   "Run `python -m evals.report --update-baseline` on a green run and commit `evals/baseline.json`."]
     if failures:
         lines += ["", "### Why it failed", *[f"- {f}" for f in failures]]
@@ -146,10 +151,11 @@ def main() -> int:
     results = json.loads(args.results.read_text())
     summary = summarise(results)
     baselines = json.loads(args.baseline.read_text()) if args.baseline.exists() else {}
-    baseline = baselines.get(results["mode"])
+    key = baseline_key(results)
+    baseline = baselines.get(key)
 
     if args.update_baseline:
-        baselines[results["mode"]] = {
+        baselines[key] = {
             "prompt_version": results["prompt_version"],
             "model": results["model"],
             "git_sha": results["git_sha"],
@@ -158,7 +164,7 @@ def main() -> int:
             "cases": summary["cases"],
         }
         args.baseline.write_text(json.dumps(baselines, indent=2, sort_keys=True) + "\n")
-        print(f"Updated the {results['mode']} baseline in {args.baseline}")
+        print(f"Updated the {key} baseline in {args.baseline}")
         return 0
 
     failures = gate(results, summary, baseline)

@@ -151,14 +151,43 @@ invented timelines or compensation).
 A reply that states a different outcome than the policy outcome scores at most 2."""
 
 
+# Default judge per agent provider (any LiteLLM model id works via EVAL_JUDGE_MODEL).
+_DEFAULT_JUDGES = {"gemini": "gemini/gemini-3.8-flash"}
+
+
+def judge_model() -> str:
+    from app.config import get_settings
+
+    provider = get_settings().llm_provider
+    if os.getenv("EVAL_JUDGE_MODEL"):
+        return os.environ["EVAL_JUDGE_MODEL"]
+    if provider == "omniroute":
+        # Grading tone is a light task: a low-effort model through the same proxy.
+        return f"openai/{get_settings().omniroute_judge_model}"
+    return _DEFAULT_JUDGES.get(provider, "claude-haiku-5-5")
+
+
+def _judge_kwargs() -> dict:
+    """Route `openai/…` judge ids through the OpenAI-compatible proxy when one is set."""
+    from app.config import get_settings
+
+    s = get_settings()
+    if judge_model().startswith("openai/") and s.omniroute_base_url:
+        return {"api_base": s.omniroute_base_url, "api_key": s.omniroute_api_key}
+    return {}
+
+
 def tone_metric():
     """Opik G-Eval judge (needs the judge provider's API key)."""
     from opik.evaluation.metrics import GEval
+    from opik.evaluation.models import LiteLLMChatModel
 
     return GEval(
         task_introduction=TONE_TASK,
         evaluation_criteria=TONE_CRITERIA,
-        model=os.getenv("EVAL_JUDGE_MODEL", "claude-haiku-5-5"),
+        # A model instance, so G-Eval doesn't add `temperature=0`: newer models
+        # (Claude Haiku 5.5, Gemini 3) reject or discourage it.
+        model=LiteLLMChatModel(model_name=judge_model(), track=False, **_judge_kwargs()),
         name="tone",
         track=False,
     )
