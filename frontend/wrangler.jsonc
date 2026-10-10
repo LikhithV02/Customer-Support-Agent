@@ -1,5 +1,5 @@
 // The app UI as a static-assets Cloudflare Worker (no Worker script: Cloudflare
-// serves dist/ directly). Deployed by .github/workflows/deploy-ui.yml; see
+// serves dist/ directly). Deployed by Cloudflare Workers Builds on push to main, or `npm run deploy`; see
 // docs/DEPLOY.md. Security headers and caching live in public/_headers.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
