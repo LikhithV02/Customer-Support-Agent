@@ -29,6 +29,9 @@ HERE = Path(__file__).parent
 RATE_TOLERANCE = 0.02
 TONE_TOLERANCE = 0.03
 MAX_JUDGE_FAILURES = 0.10
+# Above this share of cases ending in an agent error, the run says nothing
+# about quality: the model provider was down. Report that, not a regression.
+MAX_AGENT_ERRORS = 0.25
 REGRESSION_METRICS = ("decision_matches_policy", "tool_correctness")
 
 
@@ -65,6 +68,17 @@ def summarise(results: dict) -> dict:
 
 def gate(results: dict, summary: dict, baseline: dict | None) -> list[str]:
     """Reasons the build should fail (empty = pass)."""
+    errored = [c["id"] for c in results["cases"] if c.get("error")]
+    if len(errored) > MAX_AGENT_ERRORS * max(len(results["cases"]), 1):
+        return [
+            f"the agent errored on {len(errored)}/{len(results['cases'])} cases, so the model "
+            "provider was probably unreachable; this run can't measure quality. Re-run when "
+            "it's healthy (the safety floors are still checked below)."
+        ] + [
+            f"`{m}` must pass on every case"
+            for m in FLOORS
+            if any(c["scores"][m]["value"] != 1 for c in results["cases"])
+        ]
     failures = []
     for m in FLOORS:
         bad = [c["id"] for c in results["cases"] if c["scores"][m]["value"] != 1]

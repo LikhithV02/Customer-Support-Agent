@@ -160,3 +160,16 @@ def test_gate_checks_tone_and_judge_failures():
     assert any("tone` regressed" in f for f in _gate(worse, baseline))
     flaky_judge = _results([GOOD] * 4, mode="live", tone=[0.8, 0.8, None, None])
     assert any("judge failed" in f for f in _gate(flaky_judge, baseline))
+
+
+def test_gate_reports_a_provider_outage_not_a_regression():
+    # Every turn errored (the model was unreachable): say so, don't blame quality.
+    baseline = report.summarise(_results([GOOD] * 10))
+    down = _results([GOOD | {"decision_matches_policy": 0, "tool_correctness": 0}] * 10)
+    for c in down["cases"]:
+        c["error"] = "Sorry, something went wrong on our side."
+    failures = _gate(down, baseline)
+    assert len(failures) == 1 and "unreachable" in failures[0]
+    # A money-safety failure is still reported during an outage.
+    down["cases"][0]["scores"]["ledger_safe"]["value"] = 0
+    assert any("ledger_safe" in f for f in _gate(down, baseline))
