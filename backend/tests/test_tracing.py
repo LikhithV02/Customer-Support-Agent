@@ -240,3 +240,16 @@ def test_anthropic_cache_tokens_are_billed_once():
     # Idempotent.
     assert tracing.fix_anthropic_cache_accounting()
     assert lc.map_to_anthropic_usage()["input_tokens"] == 2400
+
+
+def test_hosted_opik_ignores_a_local_config_file(monkeypatch):
+    """An API key without OPIK_URL_OVERRIDE must go to Comet, even when
+    ~/.opik.config points at a self-hosted instance."""
+    from opik.config import OPIK_URL_CLOUD
+
+    s = get_settings()
+    monkeypatch.setattr(s, "opik_api_key", "k")
+    monkeypatch.setattr(s, "opik_url_override", "")
+    assert tracing.opik_host() == OPIK_URL_CLOUD
+    monkeypatch.setattr(s, "opik_url_override", "http://localhost:5173/api")
+    assert tracing.opik_host() == "http://localhost:5173/api"

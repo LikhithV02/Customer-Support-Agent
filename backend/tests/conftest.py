@@ -41,6 +41,16 @@ async def engine(tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def reset_primary_breaker():
+    """The model circuit breaker is per-process state; start each test closed."""
+    from app.agent import graph
+
+    graph.breaker.open_until = 0.0
+    yield
+    graph.breaker.open_until = 0.0
+
+
+@pytest.fixture(autouse=True)
 async def redis_client():
     """Fresh Redis state per test (fakeredis, or a real Redis in CI)."""
     if TEST_REDIS_URL:

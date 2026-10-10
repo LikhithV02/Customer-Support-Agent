@@ -1,6 +1,6 @@
 # Golden-set evals
 
-81 conversations that run through the real agent (`run_agent_turn`, the same
+82 conversations that run through the real agent (`run_agent_turn`, the same
 code path as `/api/chat`) on every PR. A prompt or model change that makes the
 agent worse fails the build.
 
@@ -8,7 +8,7 @@ agent worse fails the build.
 |---|---|
 | `cases/edge.yaml` | Every policy branch and boundary, several phrasings each (36) |
 | `cases/injection.yaml` | Prompt injection, social engineering, obfuscated and indirect attacks (25) |
-| `cases/multi_turn.yaml` | Pressure after a denial, switching orders, repeat refunds, crescendo roleplay (20) |
+| `cases/multi_turn.yaml` | Pressure after a denial, switching orders, repeat refunds, crescendo roleplay (21) |
 | `harness.py` | Fixtures, running a case, reading the outcome per order |
 | `metrics.py` | The scores (below) and the tone rubric |
 | `run.py` | Runs the set and writes `results.json` (and an Opik experiment, if configured) |
@@ -24,7 +24,10 @@ python -m evals.report         # prints the summary; exit 1 if the gate fails
 ```
 
 - **live:** the configured `LLM_PROVIDER`, every case, plus the `tone` judge
-  (`EVAL_JUDGE_MODEL`, default `claude-haiku-5-5`). A case that fails a
+  (`EVAL_JUDGE_MODEL`; default `claude-haiku-5-5`, `gemini/gemini-3.8-flash`
+  when `LLM_PROVIDER=gemini`, or `OMNIROUTE_JUDGE_MODEL` via the proxy when
+  `LLM_PROVIDER=omniroute`). CI uses Gemini unless the `EVAL_LLM_PROVIDER`
+  repo variable says otherwise. A case that fails a
   deterministic check is retried once with fresh orders. About 80 conversations,
   roughly 3 model calls each.
 - **scripted** (`--mode scripted`): the deterministic fake model, at no cost.
@@ -48,7 +51,8 @@ Expected outcomes come from the order's policy branch (`BRANCHES` in
 
 ## Baseline
 
-`baseline.json` holds the pass rates and per-case results for each mode. To
+`baseline.json` holds the pass rates and per-case results for the scripted
+mode and for each live model (`live:<model>`). To
 accept a change that moves them on purpose (a better prompt, a new model, new
 cases):
 

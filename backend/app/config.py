@@ -47,12 +47,27 @@ class Settings(BaseSettings):
     # permissive defaults. "prod" requires real secrets, Redis and Postgres.
     env: str = "dev"
 
-    # LLM provider: "anthropic", "openai" or "fake" (scripted, for load tests)
+    # LLM provider: "anthropic", "openai", "gemini", "omniroute" (any
+    # OpenAI-compatible proxy) or "fake" (scripted, for load tests)
     llm_provider: str = "anthropic"
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+    gemini_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
     openai_model: str = "gpt-4o"
+    gemini_model: str = "gemini-3.8-flash"
+    # OpenAI-compatible proxy (e.g. OmniRoute). The model id picks the reasoning
+    # level: the agent's refund decisions use `…-medium`; cheap side tasks (the
+    # eval tone judge) use OMNIROUTE_JUDGE_MODEL.
+    omniroute_base_url: str = ""
+    omniroute_api_key: str = ""
+    omniroute_model: str = "cx/gpt-5.6-sol-medium"
+    omniroute_judge_model: str = "cx/gpt-5.6-luna-low"
+    # Fail over fast when a provider is unreachable (the request timeout above
+    # still bounds slow responses).
+    llm_connect_timeout_s: float = 5.0
+    # After the primary fails, send calls straight to the fallback for this long.
+    llm_fallback_cooldown_s: float = 30.0
     # Optional secondary provider used when the primary errors (e.g. "openai").
     llm_fallback_provider: str = ""
     llm_timeout_s: float = 60.0
@@ -180,6 +195,10 @@ class Settings(BaseSettings):
             return bool(self.anthropic_api_key)
         if self.llm_provider == "openai":
             return bool(self.openai_api_key)
+        if self.llm_provider == "gemini":
+            return bool(self.gemini_api_key)
+        if self.llm_provider == "omniroute":
+            return bool(self.omniroute_api_key and self.omniroute_base_url)
         return self.llm_provider == "fake"
 
 

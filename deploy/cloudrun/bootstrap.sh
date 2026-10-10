@@ -57,15 +57,21 @@ put_secret() {
 put_secret acme-database-url "Neon DATABASE_URL (postgresql://…?sslmode=require, the DIRECT host)"
 put_secret acme-redis-url "Upstash REDIS_URL (rediss://default:…@….upstash.io:6379)"
 put_secret acme-anthropic-api-key "ANTHROPIC_API_KEY"
-# Optional: Comet-hosted Opik for traces and cost dashboards.
-read -r -s -p "OPIK_API_KEY (optional, blank to skip): " opik_key; echo
-if [ -n "$opik_key" ] || gcloud secrets describe acme-opik-api-key >/dev/null 2>&1; then
-  gcloud secrets describe acme-opik-api-key >/dev/null 2>&1 ||
-    gcloud secrets create acme-opik-api-key --replication-policy automatic >/dev/null
-  [ -n "$opik_key" ] && printf '%s' "$opik_key" | gcloud secrets versions add acme-opik-api-key --data-file - >/dev/null
-  gcloud secrets add-iam-policy-binding acme-opik-api-key --member "serviceAccount:${RUNTIME_SA}" \
-    --role roles/secretmanager.secretAccessor >/dev/null
-fi
+# Optional secrets: only needed when the matching provider/feature is used.
+put_optional_secret() {
+  local name="$1" prompt="$2" value
+  read -r -s -p "$prompt (optional, blank to skip): " value; echo
+  if [ -n "$value" ] || gcloud secrets describe "$name" >/dev/null 2>&1; then
+    gcloud secrets describe "$name" >/dev/null 2>&1 ||
+      gcloud secrets create "$name" --replication-policy automatic >/dev/null
+    [ -n "$value" ] && printf '%s' "$value" | gcloud secrets versions add "$name" --data-file - >/dev/null
+    gcloud secrets add-iam-policy-binding "$name" --member "serviceAccount:${RUNTIME_SA}" \
+      --role roles/secretmanager.secretAccessor >/dev/null
+  fi
+}
+put_optional_secret acme-gemini-api-key "GEMINI_API_KEY"
+put_optional_secret acme-omniroute-api-key "OMNIROUTE_API_KEY"
+put_optional_secret acme-opik-api-key "OPIK_API_KEY (Comet-hosted Opik)"
 if ! gcloud secrets describe acme-jwt-secret >/dev/null 2>&1; then
   gcloud secrets create acme-jwt-secret --replication-policy automatic >/dev/null
   openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add acme-jwt-secret --data-file - >/dev/null
@@ -107,6 +113,8 @@ Done. Set these GitHub repository *variables* (Settings → Secrets and variable
   GCP_DEPLOY_SA      = ${DEPLOY_SA}
   DEMO_CORS_ORIGINS  = https://<your-app>.vercel.app,https://<you>.github.io
   DEMO_OPIK_WORKSPACE = <your Comet workspace>   (optional; enables Opik tracing)
+  DEMO_LLM_PROVIDER, DEMO_LLM_FALLBACK_PROVIDER, DEMO_OMNIROUTE_BASE_URL
+                      (optional; default anthropic → fake, see docs/DEPLOY.md)
 
 Then push to main (or run the "Deploy backend (Cloud Run)" workflow) to deploy.
 The cleanup scheduler starts working after the first deploy creates the job.

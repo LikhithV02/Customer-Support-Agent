@@ -26,10 +26,42 @@ if [ -n "$OPIK_WORKSPACE" ]; then
             - { name: OPIK_API_KEY, valueFrom: { secretKeyRef: { name: acme-opik-api-key, key: latest } } }"
 fi
 export OPIK_ENV
+
+# Model provider and fallback (docs/DEPLOY.md → Model provider). "fake" is the
+# scripted model, so the demo keeps answering if every real provider fails.
+LLM_PROVIDER="${LLM_PROVIDER:-anthropic}"
+LLM_FALLBACK_PROVIDER="${LLM_FALLBACK_PROVIDER:-fake}"
+case " $LLM_PROVIDER $LLM_FALLBACK_PROVIDER " in
+  *" omniroute "*)
+    [ -n "${OMNIROUTE_BASE_URL:-}" ] || { echo "set OMNIROUTE_BASE_URL to an HTTPS URL Cloud Run can reach" >&2; exit 1; } ;;
+esac
+env_line() { printf '            - { name: %s, value: "%s" }\n' "$1" "$2"; }
+secret_line() {
+  printf '            - { name: %s, valueFrom: { secretKeyRef: { name: %s, key: latest } } }\n' "$1" "$2"
+}
+llm_env() {
+  env_line LLM_PROVIDER "$LLM_PROVIDER"
+  env_line LLM_FALLBACK_PROVIDER "$LLM_FALLBACK_PROVIDER"
+  local p
+  for p in $(printf '%s\n' "$LLM_PROVIDER" "$LLM_FALLBACK_PROVIDER" | sort -u); do
+    case "$p" in
+      anthropic) secret_line ANTHROPIC_API_KEY acme-anthropic-api-key ;;
+      gemini)
+        env_line GEMINI_MODEL "${GEMINI_MODEL:-gemini-3.8-flash}"
+        secret_line GEMINI_API_KEY acme-gemini-api-key ;;
+      omniroute)
+        env_line OMNIROUTE_BASE_URL "${OMNIROUTE_BASE_URL:-}"
+        env_line OMNIROUTE_MODEL "${OMNIROUTE_MODEL:-cx/gpt-5.6-sol-medium}"
+        secret_line OMNIROUTE_API_KEY acme-omniroute-api-key ;;
+    esac
+  done
+}
+LLM_ENV="$(llm_env)"
+export LLM_ENV
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 RENDERED="$(mktemp -d)"
-VARS='${SERVICE} ${IMAGE} ${RUNTIME_SA} ${CORS_ORIGINS} ${DEMO_GLOBAL_DAILY_TOKEN_BUDGET} ${OPIK_ENV}'
+VARS='${SERVICE} ${IMAGE} ${RUNTIME_SA} ${CORS_ORIGINS} ${DEMO_GLOBAL_DAILY_TOKEN_BUDGET} ${OPIK_ENV} ${LLM_ENV}'
 
 if [ -z "${SKIP_BUILD:-}" ]; then
   echo "==> Building ${IMAGE}"

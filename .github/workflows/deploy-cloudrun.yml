@@ -30,6 +30,9 @@ jobs:
       CORS_ORIGINS: ${{ vars.DEMO_CORS_ORIGINS }}
       DEMO_GLOBAL_DAILY_TOKEN_BUDGET: ${{ vars.DEMO_GLOBAL_DAILY_TOKEN_BUDGET || '1500000' }}
       OPIK_WORKSPACE: ${{ vars.DEMO_OPIK_WORKSPACE }}
+      LLM_PROVIDER: ${{ vars.DEMO_LLM_PROVIDER }}
+      LLM_FALLBACK_PROVIDER: ${{ vars.DEMO_LLM_FALLBACK_PROVIDER }}
+      OMNIROUTE_BASE_URL: ${{ vars.DEMO_OMNIROUTE_BASE_URL }}
       TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4

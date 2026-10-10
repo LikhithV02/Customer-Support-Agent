@@ -89,6 +89,20 @@ def fix_anthropic_cache_accounting() -> bool:
     return True
 
 
+def opik_host() -> str | None:
+    """Where to send data. An API key without a URL override means Comet-hosted
+    Opik, stated explicitly so a local `~/.opik.config` (e.g. one pointing at a
+    self-hosted instance) can't silently redirect it."""
+    settings = get_settings()
+    if settings.opik_url_override:
+        return settings.opik_url_override
+    if settings.opik_api_key:
+        from opik.config import OPIK_URL_CLOUD
+
+        return OPIK_URL_CLOUD
+    return None
+
+
 def _get_client():
     """The process-wide Opik client, created on first use (None when disabled)."""
     global _client
@@ -102,7 +116,7 @@ def _get_client():
         _client = opik.Opik(
             project_name=settings.opik_project_name,
             workspace=settings.opik_workspace or None,
-            host=settings.opik_url_override or None,
+            host=opik_host(),
             api_key=settings.opik_api_key or None,
         )
         # OpikTracer logs through the global client.

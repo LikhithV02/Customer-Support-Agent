@@ -119,6 +119,29 @@ The service URL appears on the run's `demo` environment. You can also deploy
 from a laptop with `PROJECT_ID=… ./deploy/cloudrun/deploy.sh`, which builds with
 Cloud Build.
 
+### Model provider
+
+By default the demo runs on Claude (`acme-anthropic-api-key`), falling back to
+the scripted model. These optional repo variables change that:
+
+| Variable | Values |
+|---|---|
+| `DEMO_LLM_PROVIDER` | `anthropic` (default), `openai`, `gemini`, `omniroute` |
+| `DEMO_LLM_FALLBACK_PROVIDER` | `fake` (default, the scripted model), `gemini`, `anthropic`, … |
+| `DEMO_OMNIROUTE_BASE_URL` | the OpenAI-compatible proxy's `/v1` URL (required for `omniroute`) |
+
+`deploy.sh` wires in only the keys the chosen providers need:
+`acme-gemini-api-key` and `acme-omniroute-api-key` (both optional in
+`bootstrap.sh`) and `acme-anthropic-api-key`.
+
+When the primary fails, that pod sends model calls straight to the fallback for
+`LLM_FALLBACK_COOLDOWN_S` (30 s), then tries the primary again. A connect
+timeout of `LLM_CONNECT_TIMEOUT_S` (5 s) bounds how long a dead primary can
+stall a turn. **Cloud Run must be able to reach the proxy:** a private address
+such as a Tailscale `100.x` IP won't work. Expose the proxy over public HTTPS
+with its API key required (e.g. Tailscale Funnel, Cloudflare Tunnel, or Caddy on
+the VPS), and use that URL.
+
 ### 4. App UI on Vercel
 
 1. **Add New → Project**, then import the repo. Set **Root Directory** to

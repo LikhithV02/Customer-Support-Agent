@@ -420,7 +420,7 @@ def test_guard_fuzzy_match_catches_obfuscations():
 
 
 def test_approval_claim_regex_does_not_fire_on_denials_or_escalations():
-    from app.agent.runner import _APPROVAL_CLAIM
+    from app.agent.runner import claims_approval
 
     # Legitimate messages that mention refund/approval words but grant nothing.
     for text in [
@@ -430,8 +430,12 @@ def test_approval_claim_regex_does_not_fire_on_denials_or_escalations():
         "automatically. I've escalated your case to a human specialist.",
         "Your refund has not been approved — this item was final sale.",
         "I'm unable to process a refund for this order.",
+        # Found by the golden-set evals (GPT-5.6): negated claims are denials.
+        "Order EV-1-B is not eligible because it was final sale. No refund was issued.",
+        "No refund has been processed for this order.",
+        "I checked, and not a single refund was issued on that order.",
     ]:
-        assert _APPROVAL_CLAIM.search(text) is None, text
+        assert not claims_approval(text), text
 
     # Affirmative claims the sanitizer must still catch.
     for text in [
@@ -439,8 +443,11 @@ def test_approval_claim_regex_does_not_fire_on_denials_or_escalations():
         "Your refund of $129.99 has been processed.",
         "I've approved your refund.",
         "Your order has been successfully refunded.",
+        # A negation elsewhere in the reply doesn't hide a real claim.
+        "No problem at all! Your refund was issued just now.",
+        "There's no doubt: your refund has been approved.",
     ]:
-        assert _APPROVAL_CLAIM.search(text) is not None, text
+        assert claims_approval(text), text
 
 
 def test_guard_flags_injection_with_intervening_words():

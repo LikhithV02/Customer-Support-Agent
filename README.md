@@ -12,7 +12,7 @@ agent's internal reasoning live.
 
 Built with **FastAPI + LangGraph** (backend/agent), **React + Vite** (frontend),
 **Postgres** (mock CRM), **Redis** (shared state), and a **provider-agnostic LLM
-layer** (Anthropic _or_ OpenAI).
+layer** (Anthropic, OpenAI, Gemini or any OpenAI-compatible proxy).
 
 **Production-ready and horizontally scalable:** JWT identity, stateless backend
 pods, Kubernetes manifests with autoscaling, Prometheus metrics, and a Locust
@@ -70,6 +70,12 @@ OPENAI_API_KEY=sk-...           # required if LLM_PROVIDER=openai
 
 - Anthropic keys: https://console.anthropic.com/settings/keys
 - OpenAI keys: https://platform.openai.com/api-keys
+
+Google Gemini also works: `LLM_PROVIDER=gemini` with `GEMINI_API_KEY`
+(`GEMINI_MODEL` defaults to `gemini-3.8-flash`). So does any OpenAI-compatible
+proxy such as OmniRoute: `LLM_PROVIDER=omniroute` with `OMNIROUTE_BASE_URL`,
+`OMNIROUTE_API_KEY` and `OMNIROUTE_MODEL`. Set `LLM_FALLBACK_PROVIDER` (for
+example `gemini`) to fail over when the primary is down.
 
 Switch providers by changing `LLM_PROVIDER` and restarting (`docker compose up`).
 You only need a key for the provider you select.
@@ -268,7 +274,7 @@ an API key is present, and is skipped otherwise.
 
 ### Golden-set evals
 
-81 conversations (policy edge cases, injection attacks, multi-turn pressure) run
+82 conversations (policy edge cases, injection attacks, multi-turn pressure) run
 through the real agent on every PR. They score tool use, the final decision
 against the policy and the refund ledger, false "approved" claims, and tone (an
 LLM judge). A regression against the committed baseline fails the build. See
