@@ -17,7 +17,7 @@ on free tiers:
 | Piece | Host | Why |
 |---|---|---|
 | Landing page (`landing/`) | GitHub Pages | Static, lives next to the code, deployed by `.github/workflows/pages.yml` |
-| App UI (`frontend/`) | Cloudflare (static-assets Worker) | Static SPA on a custom domain at the edge; talks to the API cross-origin. Deployed by `.github/workflows/deploy-ui.yml` |
+| App UI (`frontend/`) | Cloudflare (static-assets Worker) | Static SPA on a custom domain at the edge; talks to the API cross-origin. Deployed by Cloudflare Workers Builds on every push to `main` |
 | Backend (`backend/`) | Cloud Run | Container, scales to zero, allows 60-min requests so SSE streams work |
 | Postgres | Neon (free) | Managed, serverless Postgres |
 | Redis | Upstash (free) | Managed Redis over TLS; supports the pub/sub the admin live view uses |
@@ -147,21 +147,27 @@ the VPS), and use that URL.
 `frontend/wrangler.jsonc` deploys `frontend/dist` as a static-assets Worker
 (no Worker code) with SPA routing, on a custom domain whose DNS is on
 Cloudflare. `frontend/public/_headers` sets the security headers, the CSP and
-long-lived caching for hashed assets.
+long-lived caching for hashed assets. `npm run build:cloudflare` builds with
+`frontend/.env.cloudflare`, which points the UI at the Cloud Run API. The
+Docker/nginx build doesn't load that file and keeps using same-origin `/api`.
 
-1. Change `routes[0].pattern` in `frontend/wrangler.jsonc` to your hostname.
-2. First deploy from a laptop (opens a browser to log in to Cloudflare):
+1. Change `routes` in `frontend/wrangler.jsonc` to your hostname, and the URL
+   in `frontend/.env.cloudflare` to your Cloud Run URL.
+2. First deploy, from a laptop (wrangler opens a browser to log in):
    ```bash
-   cd frontend
-   VITE_API_BASE_URL=https://acme-support-api-xxxx.a.run.app npm run build
-   npx wrangler@4 deploy
+   npm --prefix frontend run deploy
    ```
-   Cloudflare creates the DNS record and certificate for the custom domain.
+   Cloudflare creates the DNS record and the certificate for the custom domain.
 3. Put the UI's origin in `DEMO_CORS_ORIGINS` and re-run the backend deploy.
-4. To deploy on every push to `main`, create an API token from the **Edit
-   Cloudflare Workers** template. Save it as the `CLOUDFLARE_API_TOKEN` secret,
-   and set the `CLOUDFLARE_ACCOUNT_ID` variable (`npx wrangler whoami` prints it).
-   **Deploy UI (Cloudflare)** stays inert until the variable exists.
+4. **Deploy on every push** with Cloudflare Workers Builds. No token is
+   stored in GitHub. In the dashboard, open Workers & Pages → the Worker →
+   Settings → Builds → Connect, then set:
+   - **Repository:** this repo, branch `main`
+   - **Root directory:** `frontend`
+   - **Build command:** `npm ci && npm run build:cloudflare`
+   - **Deploy command:** `npx wrangler deploy`
+
+   `npm --prefix frontend run deploy` still works for a manual deploy.
 
 If you put the API on a custom domain instead of `*.run.app`, add it to
 `connect-src` in the CSP in `frontend/public/_headers`.
