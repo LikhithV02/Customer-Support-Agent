@@ -114,7 +114,7 @@ _NEGATED = re.compile(r"\b(?:no|not|never|without|nor)\b[\s\w,'-]{0,12}$", re.I)
 # your refund has been approved" is still a claim.
 _DECLINED = re.compile(
     r"\b(?:can[’']?t|cannot|can not|won[’']t|will not|unable to|not able to)\b"
-    r"[^.!?\n]{0,60}?\b(?:confirm|say|state|promise|guarantee|tell you|include|write)\s+"
+    r"[^.!?\n]{0,60}?\b(?:confirm|say|state|claim|pretend|report|promise|guarantee|tell you|include|write)\s+"
     # "that the $89 ", "that another **$59** ", "“Your second " — up to three
     # short words, Markdown emphasis included
     r"(?:that\s+)?[“\"']?(?:[\w$,.*]+\s+){0,3}$",
