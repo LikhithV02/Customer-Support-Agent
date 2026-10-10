@@ -12,6 +12,8 @@ export function outcomeOf(steps: StepEvent[]): Outcome | null {
     const r = s.payload?.result;
     if (s.step_type === "decision" && r?.decision) decided = r.decision as Outcome;
     else if (s.step_type === "policy_eval" && r?.decision) evaluated = r.decision as Outcome;
+    // The policy refused to send the order to a human (a later decision wins).
+    else if (s.step_type === "decision" && r?.error === "escalation_not_allowed") evaluated ??= "denied";
     if (BLOCKING_ERRORS.has(r?.error)) blocked = true;
   }
   if (decided) return decided;

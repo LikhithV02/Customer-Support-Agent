@@ -108,6 +108,7 @@ async def _run_all(cases, mode: str, parallel: int) -> list[dict]:
                 for c in run.tool_calls()
             ],
             "ledger": run.ledger,
+            "error": run.error,
             "scores": out,
             "retried": retried,
             "trace_ids": run.trace_ids(),

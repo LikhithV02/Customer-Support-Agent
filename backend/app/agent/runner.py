@@ -51,7 +51,7 @@ from app.agent.graph import get_agent
 from app.agent.guard import detect_injection
 from app.agent.llm import primary_model_name, use_prompt_caching
 from app.agent.prompts import get_system_prompt
-from app.agent.tools import ToolContext, tool_config
+from app.agent.tools import UNTRUSTED_PLACEHOLDER, ToolContext, tool_config
 from app.config import get_settings
 from app.db import session as db
 from app.db.models import Conversation, Message, ReasoningEvent, utcnow
@@ -108,12 +108,25 @@ _APPROVAL_CLAIM = re.compile(
 # A claim preceded by a negation ("No refund was issued", "not a single refund
 # has been processed") is a denial, not a claim.
 _NEGATED = re.compile(r"\b(?:no|not|never|without|nor)\b[\s\w,'-]{0,12}$", re.I)
+# So is a claim the agent explicitly declines to make ("I can't bypass the limit
+# or confirm that a refund was issued"; found by the red team). Only a refusal
+# verb directly governing the claim counts, so "Even though I can't normally,
+# your refund has been approved" is still a claim.
+_DECLINED = re.compile(
+    r"\b(?:can[’']?t|cannot|can not|won[’']t|will not|unable to|not able to)\b"
+    r"[^.!?\n]{0,60}?\b(?:confirm|say|state|promise|guarantee|tell you|include|write)\s+"
+    # "that the $89 ", "that another **$59** ", "“Your second " — up to three
+    # short words, Markdown emphasis included
+    r"(?:that\s+)?[“\"']?(?:[\w$,.*]+\s+){0,3}$",
+    re.I,
+)
 
 
 def claims_approval(text: str) -> bool:
     """True if `text` affirmatively says a refund was granted."""
     return any(
         not _NEGATED.search(text[max(0, m.start() - 24) : m.start()])
+        and not _DECLINED.search(text[max(0, m.start() - 100) : m.start()])
         for m in _APPROVAL_CLAIM.finditer(text)
     )
 
@@ -389,6 +402,20 @@ async def run_agent_turn(
                                 result = json.loads(msg.content)
                             except (json.JSONDecodeError, TypeError):
                                 result = {"raw": str(msg.content)}
+                            # Indirect injection: a tool returned stored text that
+                            # read like instructions (the tool already replaced it).
+                            if UNTRUSTED_PLACEHOLDER in str(msg.content):
+                                flags.append(f"tool:{msg.name}")
+                                INJECTION_FLAGS.inc()
+                                yield await emit(
+                                    "injection_flag",
+                                    "guard",
+                                    {
+                                        "patterns": ["instructions_in_tool_output"],
+                                        "source": "tool",
+                                        "tool": msg.name,
+                                    },
+                                )
                             # Track whether this turn actually approved a refund —
                             # the output sanitizer relies on it.
                             if msg.name in _DECISION_TOOLS and isinstance(result, dict):

@@ -18,6 +18,10 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import Architecture from "./Architecture";
+import Deployment from "./Deployment";
+import { EvalResults } from "./Evaluation";
+import LoadCharts from "./LoadCharts";
+import RedTeam from "./RedTeam";
 import { API_URL, APP_URL, AUTHOR, REPO_URL } from "./config";
 
 const DEMO_HREF = APP_URL || REPO_URL;
@@ -206,6 +210,7 @@ const STACK = [
   "LangGraph",
   "GPT-5.6 · Gemini · Claude",
   "Opik",
+  "promptfoo",
   "SQLAlchemy (async)",
   "Postgres",
   "Redis",
@@ -239,6 +244,8 @@ export default function App() {
           <nav className="ml-4 hidden items-center gap-6 text-sm text-muted md:flex">
             <a href="#how" className="hover:text-fg">How it works</a>
             <a href="#guardrails" className="hover:text-fg">Guardrails</a>
+            <a href="#evals" className="hover:text-fg">Evaluation</a>
+            <a href="#redteam" className="hover:text-fg">Red team</a>
             <a href="#scale" className="hover:text-fg">Scale</a>
             <a href="#stack" className="hover:text-fg">Stack</a>
           </nav>
@@ -348,8 +355,19 @@ export default function App() {
         title="The model reasons, deterministic code acts"
         lead="Each chat turn streams over SSE from a stateless FastAPI service. The agent can only act through tools, and every tool that touches money goes through the policy engine and a database row lock."
       >
-        <div className="rounded-2xl border border-line bg-surface/60 p-4 sm:p-8">
-          <Architecture />
+        <div className="grid gap-6">
+          <figure className="rounded-2xl border border-line bg-surface/60 p-4 sm:p-6">
+            <figcaption className="mb-4 text-xs font-semibold uppercase tracking-wide text-subtle">
+              Request path
+            </figcaption>
+            <Architecture />
+          </figure>
+          <figure className="rounded-2xl border border-line bg-surface/60 p-4 sm:p-6">
+            <figcaption className="mb-4 text-xs font-semibold uppercase tracking-wide text-subtle">
+              Where it runs
+            </figcaption>
+            <Deployment />
+          </figure>
         </div>
         <div className="mt-10 grid items-start gap-6 lg:grid-cols-2">
           <div>
@@ -362,7 +380,7 @@ export default function App() {
           <ol className="space-y-5">
             {[
               ["Authenticate", "A signed JWT sets who the customer is. Rate limit, per-conversation lock and a global concurrency slot are taken in Redis."],
-              ["Reason", "The LangGraph ReAct loop calls the model (GPT-5.6 in the demo, failing over to Gemini). Turn time, recursion depth and token spend are all bounded."],
+              ["Reason", "The LangGraph ReAct loop calls the model: Gemini 3.8 Flash in the demo, and any of Gemini, GPT-5.6 or Claude by config, with a circuit-breaker fallback. Turn time, recursion depth and token spend are all bounded."],
               ["Act", "Tools read the customer's own orders. check_refund_eligibility and issue_refund run the policy engine; issue_refund locks the row."],
               ["Stream and record", "Every step is saved with an atomic sequence number, published over Redis pub/sub, and streamed to the chat and the console."],
             ].map(([t, d], i) => (
@@ -400,6 +418,26 @@ export default function App() {
         </div>
       </Section>
 
+      {/* Evaluation */}
+      <Section
+        id="evals"
+        eyebrow="Evaluation"
+        title="Every pull request is graded on 83 conversations"
+        lead="A prompt or model change that makes the agent pick the wrong tool, reach the wrong decision, claim a refund it didn't make or sound worse fails the build. The checks read the database, not just the reply."
+      >
+        <EvalResults />
+      </Section>
+
+      {/* Red team */}
+      <Section
+        id="redteam"
+        eyebrow="Red team"
+        title="Then an AI attacked it"
+        lead="The golden set only has attacks someone thought to write down. So an attacker model, using promptfoo, wrote 105 new ones: policy bypass, other customers' orders, invented outcomes, PII, prompt extraction. They came as plain requests, jailbreak templates, Base64, leetspeak and multi-turn Crescendo escalation. It runs weekly in CI."
+      >
+        <RedTeam />
+      </Section>
+
       {/* Scale */}
       <Section
         id="scale"
@@ -431,6 +469,9 @@ export default function App() {
               <p className="mt-2 text-sm leading-relaxed text-muted">{body}</p>
             </div>
           ))}
+        </div>
+        <div className="mt-6">
+          <LoadCharts />
         </div>
         <div className="mt-6 overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="w-full min-w-[36rem] text-left text-sm">

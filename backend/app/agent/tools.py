@@ -4,6 +4,12 @@ These are the only way the agent can touch data or money. The critical safety
 property lives in `issue_refund`: it re-runs the deterministic policy engine and
 can only record an *approved* refund when the policy says so. Nothing the model
 says — including text injected by a malicious user — can override that gate.
+`escalate_to_human` goes through the same policy: only orders the policy sends to
+a human can be escalated, once each.
+
+Tool output is untrusted data too: free-text fields (product names, the
+customer's name) can be set by people outside the conversation, so any that
+read like instructions are replaced before the model sees them.
 
 Identity is NOT established by the agent. The customer id comes from the
 verified JWT on the request and is fixed in `ToolContext` before the agent
@@ -22,6 +28,7 @@ schemas and was the single largest CPU cost per turn under load.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 
 from langchain_core.runnables import RunnableConfig
@@ -29,9 +36,12 @@ from langchain_core.tools import tool
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.agent.guard import detect_injection
 from app.db import session as db
 from app.db.models import Customer, Order, Refund
 from app.policy.engine import evaluate
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -40,11 +50,24 @@ class ToolContext:
     verified_customer_id: str | None = None
 
 
+UNTRUSTED_PLACEHOLDER = "[text removed: looked like instructions]"
+ESCALATION_REASON_PREFIX = "[Agent summary of the customer's request; claims are unverified] "
+
+
+def untrusted_text(value: str | None) -> str | None:
+    """A free-text field from the database, or a placeholder if it reads like
+    instructions to the model (indirect prompt injection)."""
+    if value and detect_injection(value):
+        log.warning("instruction-like text removed from tool output", extra={"text": value[:200]})
+        return UNTRUSTED_PLACEHOLDER
+    return value
+
+
 def _order_view(order: Order) -> dict:
     return {
         "order_id": order.id,
-        "product_name": order.product_name,
-        "category": order.category,
+        "product_name": untrusted_text(order.product_name),
+        "category": untrusted_text(order.category),
         "amount": float(order.amount),
         "status": order.status,
         "delivered_date": order.delivered_date.date().isoformat()
@@ -88,14 +111,15 @@ def _build_tools() -> list:
                 {"error": "order_not_found", "order_id": order_id}
             )
         if order.customer_id != ctx.verified_customer_id:
-            # Ownership guard — never reveal or act on another customer's order.
-            return None, json.dumps(
-                {
-                    "error": "ownership_mismatch",
-                    "message": f"Order {order_id} does not belong to the verified "
-                    "customer. Refusing.",
-                }
+            # Ownership guard: never reveal or act on another customer's order.
+            # The reply is identical to a missing order's, so the agent can't
+            # confirm that someone else's order exists (found by the red team).
+            # Operators still see the attempt.
+            log.warning(
+                "cross-customer order access refused",
+                extra={"order_id": order_id, "customer_id": ctx.verified_customer_id},
             )
+            return None, json.dumps({"error": "order_not_found", "order_id": order_id})
         return order, None
 
     @tool
@@ -116,8 +140,8 @@ def _build_tools() -> list:
             {
                 "found": True,
                 "customer_id": customer.id,
-                "name": customer.name,
-                "email": customer.email,
+                "name": untrusted_text(customer.name),
+                "email": untrusted_text(customer.email),
                 "loyalty_tier": customer.loyalty_tier,
             }
         )
@@ -245,33 +269,58 @@ def _build_tools() -> list:
     async def escalate_to_human(order_id: str, reason: str, config: RunnableConfig) -> str:
         """Escalate a refund request to a human specialist.
 
-        Use this for refunds over $500 or any case the policy cannot auto-approve.
-        Records the escalation; a human will follow up with the customer.
+        Only for orders the refund policy sends to a human (eligible, but over
+        the automatic approval limit). Anything else is refused: ineligible
+        orders are denied, and eligible ones under the limit go through
+        `issue_refund`. Each order is escalated at most once.
         """
         ctx = _ctx(config)
         guard = _require_identity(ctx)
         if guard:
             return guard
         async with db.SessionLocal() as session:
-            order, err = await _get_owned_order(ctx, session, order_id)
+            # Row lock, as in issue_refund, so concurrent escalations serialise.
+            order, err = await _get_owned_order(ctx, session, order_id, for_update=True)
             if err:
                 return err
-            session.add(
-                Refund(
-                    order_id=order.id,
-                    amount=order.amount,
-                    decision="escalated",
-                    reason=reason[:1000],
-                    decided_by="agent",
-                    conversation_id=ctx.conversation_id,
+            customer = await session.get(Customer, ctx.verified_customer_id)
+            result = evaluate(order, customer)
+            if not (result.eligible and result.requires_escalation):
+                return json.dumps(
+                    {
+                        "error": "escalation_not_allowed",
+                        "order_id": order_id,
+                        "message": "The policy doesn't send this order to a human.",
+                        "reasons": list(result.reasons),
+                    }
                 )
+            existing = await session.scalar(
+                select(Refund.decision)
+                .where(Refund.order_id == order.id, Refund.decision.in_(("escalated", "approved")))
+                .limit(1)
             )
-            await session.commit()
+            if existing is None:
+                # The model writes this from the customer's claims: label it so
+                # a reviewer never reads it as verified fact.
+                summary = " ".join(reason.split())[:500]
+                session.add(
+                    Refund(
+                        order_id=order.id,
+                        amount=order.amount,
+                        decision="escalated",
+                        reason=ESCALATION_REASON_PREFIX + summary,
+                        decided_by="agent",
+                        conversation_id=ctx.conversation_id,
+                    )
+                )
+                await session.commit()
         return json.dumps(
             {
                 "order_id": order_id,
-                "decision": "escalated",
-                "message": "Escalated to a human specialist for manual review.",
+                "decision": existing or "escalated",
+                "message": "Escalated to a human specialist for manual review."
+                if existing in (None, "escalated")
+                else "This order's refund was already approved.",
             }
         )
 

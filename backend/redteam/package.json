@@ -1,0 +1,13 @@
+{
+  "name": "refund-agent-redteam",
+  "private": true,
+  "description": "promptfoo red-team suite for the refund agent (see README.md)",
+  "scripts": {
+    "generate": "promptfoo redteam generate -c promptfooconfig.yaml -o redteam.yaml",
+    "attack": "promptfoo redteam eval -c redteam.yaml",
+    "report": "promptfoo redteam report"
+  },
+  "devDependencies": {
+    "promptfoo": "0.124.1"
+  }
+}

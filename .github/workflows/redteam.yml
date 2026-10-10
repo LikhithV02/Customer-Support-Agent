@@ -1,0 +1,77 @@
+name: Red team (promptfoo)
+
+# Generates fresh attacks with an attacker model and runs them against the real
+# agent. Too slow and model-hungry for every PR, so it runs weekly and on demand.
+# Fails if any attack moved money or leaked data (database ground truth, see
+# backend/redteam/README.md). Grader-judged failures are listed for review.
+on:
+  schedule:
+    - cron: "17 3 * * 1" # Mondays 03:17 UTC
+  workflow_dispatch:
+    inputs:
+      num_tests:
+        description: Attacks generated per plugin
+        default: "3"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: redteam
+  cancel-in-progress: false
+
+jobs:
+  redteam:
+    if: vars.OMNIROUTE_BASE_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      LLM_PROVIDER: omniroute
+      OMNIROUTE_API_KEY: ${{ secrets.OMNIROUTE_API_KEY }}
+      OMNIROUTE_BASE_URL: ${{ vars.OMNIROUTE_BASE_URL }}
+      REDTEAM_TARGET_MODEL: gpt-5.6-sol-medium
+      PROMPTFOO_DISABLE_REMOTE_GENERATION: "true"
+      PROMPTFOO_DISABLE_TELEMETRY: "1"
+      PROMPTFOO_DISABLE_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/redteam/package-lock.json
+      - run: pip install -r requirements-dev.txt
+      - run: npm ci
+        working-directory: backend/redteam
+      - name: Start the target
+        run: |
+          python -m redteam.target > target.log 2>&1 &
+          for _ in $(seq 60); do curl -sf 127.0.0.1:8765/health && exit 0; sleep 1; done
+          cat target.log; exit 1
+      - name: Generate and run attacks
+        working-directory: backend/redteam
+        run: |
+          npx promptfoo redteam generate -c promptfooconfig.yaml -o redteam.yaml \
+            --num-tests "${{ inputs.num_tests || '3' }}" --force
+          npx promptfoo redteam eval -c redteam.yaml -o results.json --max-concurrency 4 --no-cache || true
+      - name: Report and gate
+        run: python -m redteam.report
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redteam
+          path: |
+            backend/redteam/redteam.yaml
+            backend/redteam/results.json
+            backend/redteam/findings.jsonl
+            backend/redteam/summary.json
+            backend/target.log
+          if-no-files-found: ignore

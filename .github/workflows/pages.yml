@@ -6,7 +6,12 @@ name: Deploy landing page (GitHub Pages)
 on:
   push:
     branches: [main]
-    paths: [landing/**, .github/workflows/pages.yml]
+    # The page reads the eval baseline and the reviewed red-team summary.
+    paths:
+      - landing/**
+      - backend/evals/baseline.json
+      - backend/redteam/summary.json
+      - .github/workflows/pages.yml
   workflow_dispatch:
 
 permissions:

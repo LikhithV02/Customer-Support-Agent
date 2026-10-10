@@ -81,7 +81,7 @@ export PROJECT_ID=your-project REGION=us-central1 GITHUB_REPO=LikhithV02/Custome
 ```
 
 The script prompts for the Neon URL, the Upstash URL and your Anthropic key, and
-stores each in Secret Manager. It generates the JWT secret. It then creates:
+stores each in Secret Manager. It generates the JWT secret and the `/metrics` token. It then creates:
 
 - an Artifact Registry repository
 - a runtime service account and a deploy service account
@@ -205,6 +205,9 @@ app shows a "waking up" screen otherwise. Set `minScale: "1"` in
 
 ## Operating it
 
+- **Metrics:** `/metrics` needs `Authorization: Bearer <token>`, using the
+  `acme-metrics-token` secret (created by `bootstrap.sh`), because the Cloud Run
+  URL is public.
 - **Logs:** Cloud Run → service → Logs. The logs are structured JSON with
   `request_id`, `conversation_id` and `customer_id`.
 - **Rotate the Anthropic key:**

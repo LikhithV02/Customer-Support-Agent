@@ -1,3 +1,4 @@
+import hmac
 import json
 import logging
 import random
@@ -26,6 +27,7 @@ from app.auth import (
     ROLE_ADMIN,
     ROLE_CUSTOMER,
     Principal,
+    bearer_token,
     mint_token,
     principal_from_request,
     require_admin,
@@ -144,7 +146,11 @@ async def ready() -> Response:
 
 
 @app.get("/metrics", include_in_schema=False)
-async def metrics() -> Response:
+async def metrics(request: Request) -> Response:
+    if settings.metrics_token:
+        given = bearer_token(request) or ""
+        if not hmac.compare_digest(given.encode(), settings.metrics_token.encode()):
+            raise HTTPException(status_code=401, detail="metrics token required")
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 

@@ -12,6 +12,9 @@ export default function Markdown({ children }: { children: string }) {
     <div className="space-y-2 break-words leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        // No images either: they'd load third-party URLs from model output.
+        disallowedElements={["img"]}
+        unwrapDisallowed
         components={{
           p: ({ children }) => <p>{children}</p>,
           strong: ({ children }) => (
@@ -34,16 +37,20 @@ export default function Markdown({ children }: { children: string }) {
           h3: ({ children }) => (
             <h3 className="mt-2 mb-1 text-sm font-semibold text-fg">{children}</h3>
           ),
-          a: ({ children, href }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noreferrer"
-              className="text-brand underline underline-offset-2 hover:underline"
-            >
-              {children}
-            </a>
-          ),
+          // Links render as text: the agent never needs to send one, so a
+          // clickable link here could only come from manipulated output. The
+          // URL stays visible so nothing is hidden behind link text.
+          a: ({ children, href }) => {
+            const text = typeof children === "string" ? children : null;
+            return (
+              <span>
+                {children}
+                {href && href !== text && (
+                  <span className="break-all text-muted"> ({href})</span>
+                )}
+              </span>
+            );
+          },
           code: ({ className, children }) => {
             const isBlock = /language-/.test(className ?? "");
             if (isBlock) {

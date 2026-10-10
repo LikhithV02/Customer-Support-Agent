@@ -14,3 +14,11 @@ loadtest/results/
 dump.rdb
 .opik/
 backend/evals/results.json
+
+# Red team run outputs (summary.json is committed after review)
+backend/redteam/node_modules/
+backend/redteam/redteam.yaml
+backend/redteam/results.json
+backend/redteam/findings.jsonl
+backend/redteam/eval.log
+backend/redteam/.npm-install.log

@@ -275,7 +275,7 @@ an API key is present, and is skipped otherwise.
 
 ### Golden-set evals
 
-82 conversations (policy edge cases, injection attacks, multi-turn pressure) run
+83 conversations (policy edge cases, injection attacks, multi-turn pressure) run
 through the real agent on every PR. They score tool use, the final decision
 against the policy and the refund ledger, false "approved" claims, and tone (an
 LLM judge). A regression against the committed baseline fails the build. See
@@ -284,6 +284,16 @@ LLM judge). A regression against the committed baseline fails the build. See
 ```bash
 python -m evals.run && python -m evals.report   # from backend/
 ```
+
+### Red team
+
+An attacker model (promptfoo, with GPT-5.6 through OmniRoute) writes new attacks
+and runs them against the real agent, including multi-turn Crescendo attacks
+that adapt to each reply. Its targets are policy bypass, other customers'
+orders, invented outcomes, excessive agency, PII leakage and prompt extraction.
+A grader model judges every reply. The database is checked after every turn,
+and any refund that shouldn't exist, or any leak, fails the run. It runs weekly
+in GitHub Actions; see [`backend/redteam/README.md`](backend/redteam/README.md).
 
 A full record of every verification step, the edge-case coverage matrix, results,
 and fixes is in [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
