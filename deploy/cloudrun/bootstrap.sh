@@ -79,6 +79,14 @@ if ! gcloud secrets describe acme-jwt-secret >/dev/null 2>&1; then
 fi
 gcloud secrets add-iam-policy-binding acme-jwt-secret --member "serviceAccount:${RUNTIME_SA}" \
   --role roles/secretmanager.secretAccessor >/dev/null
+# Bearer token for /metrics (the Cloud Run URL is public).
+if ! gcloud secrets describe acme-metrics-token >/dev/null 2>&1; then
+  gcloud secrets create acme-metrics-token --replication-policy automatic >/dev/null
+  openssl rand -hex 32 | tr -d '\n' | gcloud secrets versions add acme-metrics-token --data-file - >/dev/null
+  echo "   generated acme-metrics-token"
+fi
+gcloud secrets add-iam-policy-binding acme-metrics-token --member "serviceAccount:${RUNTIME_SA}" \
+  --role roles/secretmanager.secretAccessor >/dev/null
 
 echo "==> Workload Identity Federation for ${GITHUB_REPO}"
 gcloud iam workload-identity-pools describe "$POOL" --location global >/dev/null 2>&1 ||

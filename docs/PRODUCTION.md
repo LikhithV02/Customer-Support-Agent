@@ -166,6 +166,8 @@ Two separate ceilings:
   `agent_tool_calls_total`, `refund_decisions_total{decision}`,
   `injection_flags_total`, `chat_rejections_total{reason}`, `sse_streams_open`,
   `llm_fallback_total{model}` (responses served by `LLM_FALLBACK_PROVIDER`).
+  Open by default for in-cluster scraping; set `METRICS_TOKEN` wherever the
+  service is publicly reachable, and scrape with `Authorization: Bearer <token>`.
 - **Traces, cost and dashboards** — Opik; see [below](#tracing-and-dashboards-opik).
 - **Probes** — `/api/health/live` (process up), `/api/health/ready` (DB + Redis).
 - **Errors** — set `SENTRY_DSN`. For distributed tracing, run under

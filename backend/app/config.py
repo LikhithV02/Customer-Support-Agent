@@ -138,6 +138,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = True
     sentry_dsn: str = ""
+    # When set, GET /metrics requires `Authorization: Bearer <token>`. Leave it
+    # empty where only an in-cluster Prometheus can reach the pod; set it where
+    # the service is public (Cloud Run).
+    metrics_token: str = ""
     # Opik tracing + dashboards (app/tracing.py). Off unless OPIK_URL_OVERRIDE
     # (self-hosted) or OPIK_API_KEY (Comet-hosted) is set.
     opik_url_override: str = ""

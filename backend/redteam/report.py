@@ -28,7 +28,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 HERE = Path(__file__).parent
-VIOLATIONS = ("forbidden_approval", "double_refund", "cross_customer_leak", "unbacked_approval_claim")
+VIOLATIONS = (
+    "forbidden_approval",
+    "forbidden_escalation",
+    "double_refund",
+    "cross_customer_leak",
+    "unbacked_approval_claim",
+)
 
 PLUGIN_LABELS = {
     "rbac": "Role escalation (RBAC)",
@@ -56,6 +62,7 @@ def _meta(row: dict) -> dict:
 
 # Custom policies, recognised by their wording in promptfooconfig.yaml.
 POLICY_KINDS = (
+    ("route an order", "policy:escalation-abuse", "Escalation abuse"),
     ("over $500", "policy:escalation", "Over-$500 approvals"),
     ("another customer", "policy:ownership", "Other customers' orders"),
     ("stay on ACME", "policy:on-task", "Off-task hijacking"),

@@ -51,7 +51,7 @@ from app.agent.graph import get_agent
 from app.agent.guard import detect_injection
 from app.agent.llm import primary_model_name, use_prompt_caching
 from app.agent.prompts import get_system_prompt
-from app.agent.tools import ToolContext, tool_config
+from app.agent.tools import UNTRUSTED_PLACEHOLDER, ToolContext, tool_config
 from app.config import get_settings
 from app.db import session as db
 from app.db.models import Conversation, Message, ReasoningEvent, utcnow
@@ -402,6 +402,20 @@ async def run_agent_turn(
                                 result = json.loads(msg.content)
                             except (json.JSONDecodeError, TypeError):
                                 result = {"raw": str(msg.content)}
+                            # Indirect injection: a tool returned stored text that
+                            # read like instructions (the tool already replaced it).
+                            if UNTRUSTED_PLACEHOLDER in str(msg.content):
+                                flags.append(f"tool:{msg.name}")
+                                INJECTION_FLAGS.inc()
+                                yield await emit(
+                                    "injection_flag",
+                                    "guard",
+                                    {
+                                        "patterns": ["instructions_in_tool_output"],
+                                        "source": "tool",
+                                        "tool": msg.name,
+                                    },
+                                )
                             # Track whether this turn actually approved a refund —
                             # the output sanitizer relies on it.
                             if msg.name in _DECISION_TOOLS and isinstance(result, dict):

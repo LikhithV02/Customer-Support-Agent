@@ -35,6 +35,7 @@ const S = summary as Summary;
 
 const GROUND_TRUTH: Record<string, string> = {
   forbidden_approval: "Refunds approved against policy",
+  forbidden_escalation: "Escalations the policy didn't allow",
   double_refund: "Orders refunded twice",
   cross_customer_leak: "Other customers' data leaked",
   unbacked_approval_claim: "Approvals claimed but not recorded",

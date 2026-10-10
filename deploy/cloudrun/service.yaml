@@ -53,6 +53,8 @@ spec:
             - { name: DEMO_SESSION_RATE_LIMIT, value: "5/hour" }
             - { name: MAX_CONVERSATION_TURNS, value: "20" }
             - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: acme-jwt-secret, key: latest } } }
+            # The service is public, so /metrics needs a bearer token.
+            - { name: METRICS_TOKEN, valueFrom: { secretKeyRef: { name: acme-metrics-token, key: latest } } }
             - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: acme-database-url, key: latest } } }
             - { name: REDIS_URL, valueFrom: { secretKeyRef: { name: acme-redis-url, key: latest } } }
             # Model provider, fallback and their keys: rendered by deploy.sh from
