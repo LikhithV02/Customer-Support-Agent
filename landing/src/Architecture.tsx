@@ -2,7 +2,7 @@
  * Architecture diagram. Inline SVG so it inherits the page's theme tokens;
  * dashed edges animate to show which way requests and events flow.
  */
-type Node = { id: string; x: number; y: number; w: number; title: string; sub: string; accent?: boolean };
+export type Node = { id: string; x: number; y: number; w: number; title: string; sub: string; accent?: boolean };
 
 const H = 64;
 const NODES: Node[] = [
@@ -25,7 +25,7 @@ const center = (id: string, side: "l" | "r" | "t" | "b") => {
   }[side] as [number, number];
 };
 
-function Edge({
+export function Edge({
   from,
   to,
   label,

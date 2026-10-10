@@ -53,7 +53,14 @@ async def test_ownership_mismatch_is_refused(engine):
     # Signed in as Alice (CUST-001), try to read Carol's order (CUST-003).
     tools = _ctx("CUST-001")
     res = await _call(tools, "get_order", order_id="ORD-1003")
-    assert res["error"] == "ownership_mismatch"
+    # Indistinguishable from an order that doesn't exist, so the agent can't
+    # confirm that another customer's order exists.
+    missing = await _call(tools, "get_order", order_id="ORD-9999")
+    assert res == {"error": "order_not_found", "order_id": "ORD-1003"}
+    assert missing == {"error": "order_not_found", "order_id": "ORD-9999"}
+    for tool in ("check_refund_eligibility", "issue_refund", "escalate_to_human"):
+        args = {"order_id": "ORD-1003"} | ({"reason": "x"} if tool == "escalate_to_human" else {})
+        assert (await _call(tools, tool, **args))["error"] == "order_not_found"
 
 
 async def test_issue_refund_approves_valid_order(engine):

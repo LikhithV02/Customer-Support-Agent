@@ -22,6 +22,7 @@ schemas and was the single largest CPU cost per turn under load.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 
 from langchain_core.runnables import RunnableConfig
@@ -32,6 +33,8 @@ from sqlalchemy.exc import IntegrityError
 from app.db import session as db
 from app.db.models import Customer, Order, Refund
 from app.policy.engine import evaluate
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -88,14 +91,15 @@ def _build_tools() -> list:
                 {"error": "order_not_found", "order_id": order_id}
             )
         if order.customer_id != ctx.verified_customer_id:
-            # Ownership guard — never reveal or act on another customer's order.
-            return None, json.dumps(
-                {
-                    "error": "ownership_mismatch",
-                    "message": f"Order {order_id} does not belong to the verified "
-                    "customer. Refusing.",
-                }
+            # Ownership guard: never reveal or act on another customer's order.
+            # The reply is identical to a missing order's, so the agent can't
+            # confirm that someone else's order exists (found by the red team).
+            # Operators still see the attempt.
+            log.warning(
+                "cross-customer order access refused",
+                extra={"order_id": order_id, "customer_id": ctx.verified_customer_id},
             )
+            return None, json.dumps({"error": "order_not_found", "order_id": order_id})
         return order, None
 
     @tool
