@@ -14,6 +14,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app import redis as shared
 from app import tracing
+from app.agent.llm import primary_model_name
 from app.agent.runner import (
     ConversationNotFound,
     create_conversation,
@@ -154,6 +155,7 @@ async def meta() -> dict:
     return {
         "auth_mode": settings.auth_mode,
         "model": "scripted" if scripted else settings.llm_provider,
+        "model_name": None if scripted else primary_model_name(),
         "demo": {
             "session_ttl_s": settings.demo_token_ttl_s,
             "data_ttl_hours": settings.demo_data_ttl_hours,

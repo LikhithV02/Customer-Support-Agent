@@ -61,7 +61,7 @@ export default function Welcome() {
           </span>
           <h1 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">
             An AI support agent that{" "}
-            <span className="bg-gradient-to-r from-indigo-500 to-violet-500 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-brand to-accent bg-clip-text text-transparent">
               can't be talked into a bad refund.
             </span>
           </h1>

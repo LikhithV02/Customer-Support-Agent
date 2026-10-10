@@ -51,7 +51,7 @@ export default function Header() {
           {meta?.auth_mode === "dev" && <DevIdentity />}
           {meta && (
             <Badge tone={meta.model === "scripted" ? "neutral" : "brand"} className="hidden md:inline-flex">
-              {meta.model === "scripted" ? "Scripted model" : `Model: ${meta.model}`}
+              {meta.model === "scripted" ? "Scripted model" : meta.model_name || meta.model}
             </Badge>
           )}
           {demo && (
@@ -60,10 +60,11 @@ export default function Header() {
                 clearDemo();
                 navigate("/");
               }}
-              className="hidden items-center gap-1.5 rounded-full border border-warn/30 bg-warn/10 px-2.5 py-1 text-[11px] font-semibold text-warn transition-colors hover:bg-warn/20 sm:inline-flex"
+              className="inline-flex items-center gap-1.5 rounded-full border border-warn/30 bg-warn/10 px-2 py-1 text-[11px] font-semibold text-warn transition-colors hover:bg-warn/20 sm:px-2.5"
               title="Discard this sandbox and start a new one"
+              aria-label="Reset sandbox"
             >
-              Sandbox · reset <RotateCcw size={12} />
+              <span className="hidden sm:inline">Sandbox · reset</span> <RotateCcw size={12} />
             </button>
           )}
           <IconButton label="About this project" onClick={() => window.open(LANDING_URL, "_blank")}>

@@ -127,6 +127,18 @@ async def test_meta_reports_auth_mode(client, demo):
     assert body["demo"]["data_ttl_hours"] == demo.demo_data_ttl_hours
 
 
+async def test_meta_names_the_primary_model(client, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "llm_provider", "fake")
+    assert (await client.get("/api/meta")).json()["model_name"] is None  # scripted
+    monkeypatch.setattr(settings, "llm_provider", "omniroute")
+    monkeypatch.setattr(settings, "omniroute_model", "cx/gpt-5.6-sol-medium")
+    body = (await client.get("/api/meta")).json()
+    # The proxy's routing prefix is an internal detail, so the UI gets the bare id.
+    assert body["model"] == "omniroute"
+    assert body["model_name"] == "gpt-5.6-sol-medium"
+
+
 async def test_demo_purge_removes_old_sandboxes(client, demo, engine):
     from datetime import timedelta
 

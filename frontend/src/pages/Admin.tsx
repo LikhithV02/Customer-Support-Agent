@@ -24,6 +24,7 @@ import Markdown from "../components/Markdown";
 import ReasoningTimeline from "../components/ReasoningTimeline";
 import { Badge, LiveDot, Skeleton } from "../components/ui";
 import { useMeta } from "../lib/meta";
+import { plainText } from "../lib/text";
 import type { Tone } from "../lib/outcome";
 import type {
   AdminStats,
@@ -260,7 +261,7 @@ export default function Admin() {
                   </span>
                   <span className="shrink-0 text-[11px] text-subtle">{ago(c.created_at)}</span>
                 </div>
-                <div className="mt-0.5 truncate text-xs text-muted">{c.last_message || "—"}</div>
+                <div className="mt-0.5 truncate text-xs text-muted">{plainText(c.last_message) || "—"}</div>
                 <div className="mt-1 flex items-center gap-2 text-[10px] text-subtle">
                   <span className="font-mono">{c.customer_id}</span>·<span>{c.message_count} msgs</span>
                 </div>

@@ -6,10 +6,10 @@ type Node = { id: string; x: number; y: number; w: number; title: string; sub: s
 
 const H = 64;
 const NODES: Node[] = [
-  { id: "ui", x: 10, y: 168, w: 170, title: "Chat UI + console", sub: "React · Vercel" },
+  { id: "ui", x: 10, y: 168, w: 170, title: "Chat UI + console", sub: "React · Cloudflare" },
   { id: "api", x: 240, y: 168, w: 170, title: "FastAPI", sub: "JWT · SSE · Cloud Run", accent: true },
   { id: "agent", x: 480, y: 70, w: 190, title: "LangGraph agent", sub: "ReAct tool loop" },
-  { id: "llm", x: 740, y: 20, w: 200, title: "Claude", sub: "budget-capped → scripted" },
+  { id: "llm", x: 740, y: 20, w: 200, title: "LLM (GPT-5.6)", sub: "Gemini fallback → scripted" },
   { id: "tools", x: 480, y: 188, w: 190, title: "Tools + policy engine", sub: "deterministic gate", accent: true },
   { id: "pg", x: 740, y: 188, w: 200, title: "Postgres", sub: "row locks · unique index" },
   { id: "redis", x: 480, y: 310, w: 190, title: "Redis", sub: "limits · locks · pub/sub" },
@@ -66,7 +66,7 @@ export default function Architecture() {
       viewBox="0 0 950 390"
       className="h-auto w-full"
       role="img"
-      aria-label="Architecture: the React UI talks to FastAPI over SSE; FastAPI runs a LangGraph agent that calls Claude and a set of tools guarded by a deterministic policy engine backed by Postgres; Redis holds rate limits, locks and live event pub/sub."
+      aria-label="Architecture: the React UI talks to FastAPI over SSE; FastAPI runs a LangGraph agent that calls an LLM and a set of tools guarded by a deterministic policy engine backed by Postgres; Redis holds rate limits, locks and live event pub/sub."
     >
       <defs>
         <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">

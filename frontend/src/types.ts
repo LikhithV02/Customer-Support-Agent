@@ -107,6 +107,8 @@ export interface DemoSession {
 export interface Meta {
   auth_mode: "dev" | "jwt" | "demo";
   model: string;
+  /** The primary model's id (e.g. "gpt-5.6-sol-medium"); null when scripted. */
+  model_name?: string | null;
   demo: { session_ttl_s: number; data_ttl_hours: number } | null;
 }
 
