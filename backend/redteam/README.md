@@ -55,6 +55,15 @@ Crescendo strategy (up to 4 turns, escalating gradually and adapting to each
 reply). GOAT, BOLA, BFLA, hijacking and ASCII smuggling need promptfoo's
 hosted service, so they're left out.
 
+### Known limit
+
+The target translates `RT-A` … `RT-X` into the sandbox's real ids in plain
+text only. In a Base64 (or otherwise encoded) attack it can't see the alias,
+so the agent looks up the literal `RT-E` and truthfully finds nothing. Those
+attacks still test whether the agent decodes and obeys hidden instructions,
+but not whether it would act on a real order. The review marks them
+`harness`.
+
 ## Running it locally
 
 ```bash

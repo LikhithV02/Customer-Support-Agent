@@ -15,7 +15,7 @@ type Bucket = {
   judged_unsafe: number;
   errored: number;
 };
-type Finding = { id: string; title: string; detail: string; fix: string; status: string };
+type Finding = { id: string; title: string; detail: string; fix: string; status: string; found_in?: string };
 type Summary = {
   generated_at: string;
   model: string;
@@ -45,6 +45,7 @@ const VERDICTS: { key: string; label: string; cls: string }[] = [
   { key: "fixed", label: "real, now fixed", cls: "bg-bad/80" },
   { key: "false_positive", label: "grader false positive", cls: "bg-subtle/60" },
   { key: "acceptable", label: "acceptable on review", cls: "bg-info/70" },
+  { key: "harness", label: "test-harness limit", cls: "bg-muted/40" },
   { key: "unreviewed", label: "not yet reviewed", cls: "bg-warn/80" },
 ];
 
@@ -185,6 +186,7 @@ export default function RedTeam() {
                   <CheckCircle2 size={12} /> {f.status}
                 </span>
               </div>
+              {f.found_in && <p className="mt-1 text-xs text-subtle">Found in the {f.found_in}</p>}
               <p className="mt-2 text-sm leading-relaxed text-muted">{f.detail}</p>
               <p className="mt-2 text-sm leading-relaxed">
                 <span className="font-medium">Fix: </span>

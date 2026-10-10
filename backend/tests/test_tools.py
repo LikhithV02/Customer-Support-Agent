@@ -169,6 +169,9 @@ async def test_escalation_is_recorded_once_with_a_labelled_reason(engine):
     first = await _call(tools, "escalate_to_human", order_id="ORD-1003", reason=claim)
     second = await _call(tools, "escalate_to_human", order_id="ORD-1003", reason="again")
     assert first["decision"] == second["decision"] == "escalated"
+    # The repeat says it's a repeat (found by the red team: the agent otherwise
+    # told the customer it had escalated again).
+    assert first["already_escalated"] is False and second["already_escalated"] is True
     rows = await _rows("ORD-1003")
     assert len(rows) == 1
     reason = rows[0].reason

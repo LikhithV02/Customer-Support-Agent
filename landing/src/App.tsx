@@ -22,6 +22,7 @@ import Deployment from "./Deployment";
 import { EvalResults } from "./Evaluation";
 import LoadCharts from "./LoadCharts";
 import RedTeam from "./RedTeam";
+import redteamSummary from "../../backend/redteam/summary.json";
 import { API_URL, APP_URL, AUTHOR, REPO_URL } from "./config";
 
 const DEMO_HREF = APP_URL || REPO_URL;
@@ -433,7 +434,7 @@ export default function App() {
         id="redteam"
         eyebrow="Red team"
         title="Then an AI attacked it"
-        lead="The golden set only has attacks someone thought to write down. So an attacker model, using promptfoo, wrote 105 new ones: policy bypass, other customers' orders, invented outcomes, PII, prompt extraction. They came as plain requests, jailbreak templates, Base64, leetspeak and multi-turn Crescendo escalation. It runs weekly in CI."
+        lead={`The golden set only has attacks someone thought to write down. So an attacker model, using promptfoo, writes new ones: policy bypass, escalation abuse, other customers' orders, invented outcomes, PII, prompt extraction. They come as plain requests, jailbreak templates, Base64, leetspeak and multi-turn Crescendo escalation. The latest run sent ${redteamSummary.attacks} attacks against the fixed code. It runs weekly in CI.`}
       >
         <RedTeam />
       </Section>

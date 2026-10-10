@@ -314,13 +314,19 @@ def _build_tools() -> list:
                     )
                 )
                 await session.commit()
+        if existing is None:
+            message = "Escalated to a human specialist for manual review."
+        elif existing == "escalated":
+            # Say so, or the model reports a second escalation that never happened.
+            message = "Already escalated: a specialist is reviewing it. Nothing new was recorded."
+        else:
+            message = "This order's refund was already approved."
         return json.dumps(
             {
                 "order_id": order_id,
                 "decision": existing or "escalated",
-                "message": "Escalated to a human specialist for manual review."
-                if existing in (None, "escalated")
-                else "This order's refund was already approved.",
+                "already_escalated": existing == "escalated",
+                "message": message,
             }
         )
 
