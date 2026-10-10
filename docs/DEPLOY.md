@@ -4,9 +4,9 @@ The showcase deployment has three parts, each hosted where it fits best and all
 on free tiers:
 
 ```
- GitHub Pages                   Vercel                        Google Cloud Run
+ GitHub Pages                   Cloudflare                    Google Cloud Run
 ┌──────────────────┐  "Try"  ┌──────────────────┐  HTTPS+SSE ┌────────────────────┐
-│ landing/         │ ──────▶ │ frontend/ (SPA)  │ ─────────▶ │ backend/ (FastAPI) │──▶ Anthropic
+│ landing/         │ ──────▶ │ frontend/ (SPA)  │ ─────────▶ │ backend/ (FastAPI) │──▶ LLM
 │ project showcase │         │ chat + console   │   CORS     │ AUTH_MODE=demo     │
 └──────────────────┘         └──────────────────┘            └──────┬──────┬──────┘
         │ pings /api/health/live on load (wakes a cold instance)    │      │
@@ -17,14 +17,14 @@ on free tiers:
 | Piece | Host | Why |
 |---|---|---|
 | Landing page (`landing/`) | GitHub Pages | Static, lives next to the code, deployed by `.github/workflows/pages.yml` |
-| App UI (`frontend/`) | Vercel | Static SPA with preview deploys per PR; talks to the API cross-origin |
+| App UI (`frontend/`) | Cloudflare (static-assets Worker) | Static SPA on a custom domain at the edge; talks to the API cross-origin. Deployed by `.github/workflows/deploy-ui.yml` |
 | Backend (`backend/`) | Cloud Run | Container, scales to zero, allows 60-min requests so SSE streams work |
 | Postgres | Neon (free) | Managed, serverless Postgres |
 | Redis | Upstash (free) | Managed Redis over TLS; supports the pub/sub the admin live view uses |
 
-Vercel's Python functions aren't used for the backend: they can't keep a turn's
-SSE stream open for long, and the backend needs long-lived Postgres and Redis
-pools. Cloud Run runs the same container that Kubernetes runs
+Serverless functions (Cloudflare Workers, Vercel) aren't used for the backend:
+they can't keep a turn's SSE stream open for long, and the backend needs
+long-lived Postgres and Redis pools. Cloud Run runs the same container that Kubernetes runs
 ([PRODUCTION.md](PRODUCTION.md)).
 
 ---
@@ -61,7 +61,7 @@ anonymous visitors:
 ## Step by step
 
 You need a GCP project with billing enabled (Cloud Run's free tier still needs a
-billing account), the `gcloud` CLI, and accounts on Neon, Upstash and Vercel.
+billing account), the `gcloud` CLI, and accounts on Neon, Upstash and Cloudflare.
 
 ### 1. Data stores
 
@@ -102,9 +102,9 @@ are variables, not secrets: none of them is sensitive.
 | `GCP_REGION` | `us-central1` |
 | `GCP_WIF_PROVIDER` | printed by bootstrap |
 | `GCP_DEPLOY_SA` | printed by bootstrap |
-| `DEMO_CORS_ORIGINS` | `https://acme-support.vercel.app` |
+| `DEMO_CORS_ORIGINS` | `https://refund-agent.likhithv.com` (the UI's origin) |
 | `DEMO_GLOBAL_DAILY_TOKEN_BUDGET` | `1500000` (optional) |
-| `DEMO_APP_URL` | `https://acme-support.vercel.app` (landing CTA) |
+| `DEMO_APP_URL` | `https://refund-agent.likhithv.com` (landing CTA) |
 | `DEMO_API_URL` | `https://acme-support-api-xxxx.a.run.app` (landing warm-up ping) |
 
 Run **Actions → Deploy backend (Cloud Run) → Run workflow**. Every push to
@@ -142,19 +142,29 @@ such as a Tailscale `100.x` IP won't work. Expose the proxy over public HTTPS
 with its API key required (e.g. Tailscale Funnel, Cloudflare Tunnel, or Caddy on
 the VPS), and use that URL.
 
-### 4. App UI on Vercel
+### 4. App UI on Cloudflare
 
-1. **Add New → Project**, then import the repo. Set **Root Directory** to
-   `frontend`. `frontend/vercel.json` sets up the build, SPA routing, caching and
-   security headers.
-2. Environment variables:
-   - `VITE_API_BASE_URL` = the Cloud Run URL
-   - optionally `VITE_LANDING_URL` = your Pages URL
-3. Deploy. Add the Vercel URL to `DEMO_CORS_ORIGINS` and re-run the backend
-   deploy.
+`frontend/wrangler.jsonc` deploys `frontend/dist` as a static-assets Worker
+(no Worker code) with SPA routing, on a custom domain whose DNS is on
+Cloudflare. `frontend/public/_headers` sets the security headers, the CSP and
+long-lived caching for hashed assets.
+
+1. Change `routes[0].pattern` in `frontend/wrangler.jsonc` to your hostname.
+2. First deploy from a laptop (opens a browser to log in to Cloudflare):
+   ```bash
+   cd frontend
+   VITE_API_BASE_URL=https://acme-support-api-xxxx.a.run.app npm run build
+   npx wrangler@4 deploy
+   ```
+   Cloudflare creates the DNS record and certificate for the custom domain.
+3. Put the UI's origin in `DEMO_CORS_ORIGINS` and re-run the backend deploy.
+4. To deploy on every push to `main`, create an API token from the **Edit
+   Cloudflare Workers** template. Save it as the `CLOUDFLARE_API_TOKEN` secret,
+   and set the `CLOUDFLARE_ACCOUNT_ID` variable (`npx wrangler whoami` prints it).
+   **Deploy UI (Cloudflare)** stays inert until the variable exists.
 
 If you put the API on a custom domain instead of `*.run.app`, add it to
-`connect-src` in the CSP in `frontend/vercel.json`.
+`connect-src` in the CSP in `frontend/public/_headers`.
 
 ### 5. Landing page on GitHub Pages
 
@@ -175,7 +185,7 @@ for your name, LinkedIn and email. Refresh the screenshots in
 | Cloud Run | 2M requests, 180k vCPU-s, 360k GiB-s per month | Request-based billing; `maxScale: 3` caps spend |
 | Neon | 0.5 GB storage | Sandboxes are purged daily |
 | Upstash | 500k commands/month | Roughly 20 commands per chat turn |
-| Vercel Hobby / GitHub Pages | Free | Static hosting |
+| Cloudflare Workers static assets / GitHub Pages | Free | Static asset requests are free and unlimited |
 | **Anthropic** | Pay per token | **The only real cost.** See below |
 
 The LLM budget is the number to watch. A turn uses about 2–4 model calls of

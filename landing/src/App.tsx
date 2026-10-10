@@ -204,7 +204,8 @@ const STACK = [
   "Python 3.12",
   "FastAPI",
   "LangGraph",
-  "Claude",
+  "GPT-5.6 · Gemini · Claude",
+  "Opik",
   "SQLAlchemy (async)",
   "Postgres",
   "Redis",
@@ -361,7 +362,7 @@ export default function App() {
           <ol className="space-y-5">
             {[
               ["Authenticate", "A signed JWT sets who the customer is. Rate limit, per-conversation lock and a global concurrency slot are taken in Redis."],
-              ["Reason", "The LangGraph ReAct loop calls Claude with prompt caching. Turn time, recursion depth and token spend are all bounded."],
+              ["Reason", "The LangGraph ReAct loop calls the model (GPT-5.6 in the demo, failing over to Gemini). Turn time, recursion depth and token spend are all bounded."],
               ["Act", "Tools read the customer's own orders. check_refund_eligibility and issue_refund run the policy engine; issue_refund locks the row."],
               ["Stream and record", "Every step is saved with an atomic sequence number, published over Redis pub/sub, and streamed to the chat and the console."],
             ].map(([t, d], i) => (

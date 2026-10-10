@@ -17,6 +17,7 @@ export default {
         subtle: token("subtle"),
         brand: token("brand"),
         "brand-solid": token("brand-solid"),
+        accent: token("accent"),
         ok: token("ok"),
         warn: token("warn"),
         bad: token("bad"),

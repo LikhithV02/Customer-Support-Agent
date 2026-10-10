@@ -1,0 +1,23 @@
+// The app UI as a static-assets Cloudflare Worker (no Worker script: Cloudflare
+// serves dist/ directly). Deployed by .github/workflows/deploy-ui.yml; see
+// docs/DEPLOY.md. Security headers and caching live in public/_headers.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "acme-support-ui",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    // Client-side routes (/chat, /console) get index.html.
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    // The custom domain provisions DNS and the certificate.
+    { "pattern": "refund-agent.likhithv.com", "custom_domain": true },
+    // likhithv.com's portfolio Worker has a `*.likhithv.com/*` route, and zone
+    // routes run before a custom domain's Worker. This more specific route
+    // wins over that wildcard.
+    { "pattern": "refund-agent.likhithv.com/*", "zone_name": "likhithv.com" }
+  ],
+  "workers_dev": false,
+  "preview_urls": false
+}

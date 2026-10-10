@@ -1,6 +1,7 @@
 # ACME — AI Customer Support Agent (Refund Automation)
 
-**[Live demo](https://likhithv02.github.io/Customer-Support-Agent/)** ·
+**[Live demo](https://refund-agent.likhithv.com)** ·
+[Project page](https://likhithv02.github.io/Customer-Support-Agent/) ·
 [How it's deployed](docs/DEPLOY.md) · [Production guide](docs/PRODUCTION.md) ·
 [Load testing](docs/LOADTESTING.md)
 
@@ -24,7 +25,7 @@ and refund correctness. See [docs/PRODUCTION.md](docs/PRODUCTION.md) and
 customer (one order per refund-policy branch) plus a scoped admin token for the
 agent console, with per-IP and token-budget limits. When the budget runs out, turns
 fall back to the scripted model. It's deployed as a GitHub Pages landing page,
-a Vercel UI and a Cloud Run backend (Neon Postgres, Upstash Redis). See
+a Cloudflare-hosted UI and a Cloud Run backend (Neon Postgres, Upstash Redis). See
 [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ---

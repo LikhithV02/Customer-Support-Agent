@@ -111,7 +111,7 @@ Done. Set these GitHub repository *variables* (Settings → Secrets and variable
   GCP_REGION         = ${REGION}
   GCP_WIF_PROVIDER   = projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/providers/${PROVIDER}
   GCP_DEPLOY_SA      = ${DEPLOY_SA}
-  DEMO_CORS_ORIGINS  = https://<your-app>.vercel.app,https://<you>.github.io
+  DEMO_CORS_ORIGINS  = https://<your-ui-domain>
   DEMO_OPIK_WORKSPACE = <your Comet workspace>   (optional; enables Opik tracing)
   DEMO_LLM_PROVIDER, DEMO_LLM_FALLBACK_PROVIDER, DEMO_OMNIROUTE_BASE_URL
                       (optional; default anthropic → fake, see docs/DEPLOY.md)

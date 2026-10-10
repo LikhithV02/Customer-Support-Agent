@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { Outcome, StepEvent } from "../types";
 import { OUTCOME_META, type Tone } from "../lib/outcome";
+import Markdown from "./Markdown";
 import { Badge } from "./ui";
 
 const STEP_META: Record<string, { label: string; icon: LucideIcon; tone: Tone }> = {
@@ -72,7 +73,11 @@ function StepBody({ step }: { step: StepEvent }) {
   const p = step.payload || {};
   switch (step.step_type) {
     case "model":
-      return <p className="text-[13px] leading-relaxed text-fg/90">{p.text}</p>;
+      return (
+        <div className="text-[13px] text-fg/90">
+          <Markdown>{p.text ?? ""}</Markdown>
+        </div>
+      );
     case "tool_call":
       return (
         <code className="break-all font-mono text-xs leading-5 text-info">

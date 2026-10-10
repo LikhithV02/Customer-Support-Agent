@@ -1,7 +1,7 @@
 name: Deploy landing page (GitHub Pages)
 
 # One-time setup: Settings → Pages → Source: "GitHub Actions". Set the
-# repository variables DEMO_APP_URL (the Vercel UI) and DEMO_API_URL (the
+# repository variables DEMO_APP_URL (the Cloudflare-hosted UI) and DEMO_API_URL (the
 # Cloud Run backend) so the page links to and pre-warms the live demo.
 on:
   push:
