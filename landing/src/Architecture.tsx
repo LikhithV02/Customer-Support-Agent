@@ -9,7 +9,7 @@ const NODES: Node[] = [
   { id: "ui", x: 10, y: 168, w: 170, title: "Chat UI + console", sub: "React · Cloudflare" },
   { id: "api", x: 240, y: 168, w: 170, title: "FastAPI", sub: "JWT · SSE · Cloud Run", accent: true },
   { id: "agent", x: 480, y: 70, w: 190, title: "LangGraph agent", sub: "ReAct tool loop" },
-  { id: "llm", x: 740, y: 20, w: 200, title: "LLM (GPT-5.6)", sub: "Gemini fallback → scripted" },
+  { id: "llm", x: 740, y: 20, w: 200, title: "LLM (Gemini 3.8)", sub: "provider-agnostic · fallback" },
   { id: "tools", x: 480, y: 188, w: 190, title: "Tools + policy engine", sub: "deterministic gate", accent: true },
   { id: "pg", x: 740, y: 188, w: 200, title: "Postgres", sub: "row locks · unique index" },
   { id: "redis", x: 480, y: 310, w: 190, title: "Redis", sub: "limits · locks · pub/sub" },

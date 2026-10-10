@@ -11,8 +11,8 @@ const NODES: Node[] = [
   { id: "cf", x: 230, y: 60, w: 200, title: "Cloudflare", sub: "chat UI + console, edge" },
   { id: "pages", x: 230, y: 292, w: 200, title: "GitHub Pages", sub: "this page" },
   { id: "run", x: 480, y: 186, w: 190, title: "Cloud Run", sub: "FastAPI · Singapore · 0→3", accent: true },
-  { id: "omni", x: 740, y: 10, w: 200, title: "GPT-5.6 Sol", sub: "OmniRoute on own VPS" },
-  { id: "gemini", x: 740, y: 98, w: 200, title: "Gemini 3.8 Flash", sub: "fallback · circuit breaker" },
+  { id: "gemini", x: 740, y: 10, w: 200, title: "Gemini 3.8 Flash", sub: "the demo's model" },
+  { id: "fake", x: 740, y: 98, w: 200, title: "Scripted model", sub: "fallback · budget cap" },
   { id: "neon", x: 740, y: 186, w: 200, title: "Neon Postgres", sub: "orders · refund ledger" },
   { id: "redis", x: 740, y: 274, w: 200, title: "Upstash Redis", sub: "limits · locks · pub/sub" },
   { id: "opik", x: 740, y: 362, w: 200, title: "Opik", sub: "traces · cost · experiments" },
@@ -35,13 +35,13 @@ export default function Deployment() {
       viewBox="0 0 950 474"
       className="h-auto w-full"
       role="img"
-      aria-label="Deployment: the visitor loads the UI from Cloudflare and talks to the FastAPI backend on Cloud Run in Singapore. The backend calls GPT-5.6 through OmniRoute on a self-hosted VPS, failing over to Gemini, and uses Neon Postgres, Upstash Redis and Opik. GitHub Actions tests and deploys everything."
+      aria-label="Deployment: the visitor loads the UI from Cloudflare and talks to the FastAPI backend on Cloud Run in Singapore. The backend calls Gemini 3.8 Flash, failing over to a scripted model, and uses Neon Postgres, Upstash Redis and Opik. GitHub Actions tests and deploys everything."
     >
       <Edge from={at("user", "r")} to={at("cf", "l")} />
       <Edge from={at("user", "r")} to={at("pages", "l")} />
       <Edge from={at("user", "r")} to={at("run", "l")} label="HTTPS + SSE" />
-      <Edge from={at("run", "r")} to={at("omni", "l")} label="primary" />
-      <Edge from={at("run", "r")} to={at("gemini", "l")} />
+      <Edge from={at("run", "r")} to={at("gemini", "l")} label="primary" />
+      <Edge from={at("run", "r")} to={at("fake", "l")} />
       <Edge from={at("run", "r")} to={at("neon", "l")} />
       <Edge from={at("run", "r")} to={at("redis", "l")} />
       <Edge from={at("run", "r")} to={at("opik", "l")} />
