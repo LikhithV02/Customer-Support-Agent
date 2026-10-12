@@ -64,7 +64,7 @@ function Bubble({ m }: { m: ChatMessage }) {
     return (
       <div className="flex animate-fade-up justify-end gap-2.5">
         <div className="max-w-[85%]">
-          <div className="whitespace-pre-wrap rounded-2xl rounded-br-md bg-brand-solid px-4 py-2.5 text-sm text-white shadow-sm">
+          <div className="whitespace-pre-wrap rounded-2xl rounded-br-md bg-brand-solid px-4 py-2.5 text-sm text-on-brand shadow-sm">
             {m.content}
           </div>
           <div className="mt-1 text-right text-[10px] text-subtle">{time}</div>
@@ -415,7 +415,7 @@ export default function Chat() {
                 type="submit"
                 aria-label="Send message"
                 disabled={streaming || !signedIn || !input.trim() || tooLong}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-solid text-white transition-opacity hover:opacity-90 disabled:opacity-30"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-solid text-on-brand transition-opacity hover:opacity-90 disabled:opacity-30"
               >
                 <ArrowUp size={18} />
               </button>

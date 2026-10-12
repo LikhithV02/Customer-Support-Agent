@@ -50,7 +50,7 @@ export function Edge({
           className="fill-muted font-mono"
           fontSize={11}
           paintOrder="stroke"
-          stroke="rgb(var(--c-bg))"
+          stroke="rgb(var(--c-panel))"
           strokeWidth={4}
         >
           {label}

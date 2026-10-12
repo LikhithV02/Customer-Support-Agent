@@ -17,6 +17,7 @@ export default {
         subtle: token("subtle"),
         brand: token("brand"),
         "brand-solid": token("brand-solid"),
+        "on-brand": token("on-brand"),
         accent: token("accent"),
         ok: token("ok"),
         warn: token("warn"),
@@ -24,8 +25,8 @@ export default {
         info: token("info"),
       },
       fontFamily: {
-        sans: ["Inter Variable", "Inter", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "ui-monospace", "monospace"],
+        sans: ["Geist Variable", "Geist", "system-ui", "sans-serif"],
+        mono: ["Geist Mono Variable", "Geist Mono", "ui-monospace", "monospace"],
       },
       keyframes: {
         "fade-up": {

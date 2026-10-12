@@ -1,53 +1,20 @@
 import clsx from "clsx";
-import {
-  ArrowRight,
-  Boxes,
-  Eye,
-  Gauge,
-  Github,
-  KeyRound,
-  Linkedin,
-  Lock,
-  Mail,
-  Moon,
-  Scale,
-  ShieldAlert,
-  Sun,
-  Timer,
-  type LucideIcon,
-} from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import Architecture from "./Architecture";
 import Deployment from "./Deployment";
 import { EvalResults } from "./Evaluation";
-import LoadCharts from "./LoadCharts";
 import RedTeam from "./RedTeam";
+import Simulation from "./Simulation";
+import Trace from "./Trace";
+import { ArrowRight, Code, Figure, Section } from "./ui";
 import redteamSummary from "../../backend/redteam/summary.json";
 import { API_URL, APP_URL, AUTHOR, REPO_URL } from "./config";
 
 const DEMO_HREF = APP_URL || REPO_URL;
 const asset = (p: string) => `${import.meta.env.BASE_URL}${p}`;
+const breaches = Object.values(redteamSummary.ground_truth).reduce((a, b) => a + b, 0);
 
 /* ------------------------------------------------------------------------ */
-
-function useTheme(): [boolean, () => void] {
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", dark);
-  }, [dark]);
-  return [
-    dark,
-    () =>
-      setDark((d) => {
-        try {
-          localStorage.setItem("acme.theme", d ? "light" : "dark");
-        } catch {
-          /* ignore */
-        }
-        return !d;
-      }),
-  ];
-}
 
 type Status = "checking" | "waking" | "online" | "offline";
 
@@ -81,479 +48,385 @@ function useBackendStatus(): Status {
 }
 
 function StatusPill({ status }: { status: Status }) {
-  if (!API_URL) return null;
   const meta = {
-    checking: { text: "Checking demo status…", dot: "bg-subtle" },
+    checking: { text: "Checking the live demo…", dot: "bg-subtle" },
     waking: { text: "Waking up the demo server…", dot: "bg-warn animate-pulse" },
-    online: { text: "Live demo online", dot: "bg-ok" },
-    offline: { text: "Demo is offline right now", dot: "bg-bad" },
+    online: { text: "Live demo online · Cloud Run · Gemini 3.8 Flash", dot: "bg-ok shadow-[0_0_0_4px_rgb(var(--c-ok)/0.15)]" },
+    offline: { text: "Open source · runs locally with Docker", dot: "bg-subtle" },
   }[status];
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface/80 px-3 py-1 text-xs font-medium text-muted backdrop-blur">
+    <span className="inline-flex items-center gap-2.5 rounded-full border border-line px-3 py-1.5 font-mono text-xs text-muted">
       <span className={clsx("h-2 w-2 rounded-full", meta.dot)} />
       {meta.text}
     </span>
   );
 }
 
-function PrimaryCta({ className, children }: { className?: string; children?: ReactNode }) {
+function PrimaryCta({ children, big }: { children: ReactNode; big?: boolean }) {
   return (
     <a
       href={DEMO_HREF}
       className={clsx(
-        "inline-flex h-11 items-center gap-2 rounded-lg bg-brand-solid px-6 text-sm font-semibold text-white shadow-lg shadow-brand/25 transition-transform hover:-translate-y-0.5",
-        className,
+        "inline-flex items-center gap-2.5 rounded-xl bg-brand font-semibold text-on-brand transition-transform hover:-translate-y-0.5",
+        big ? "min-h-[52px] px-6" : "min-h-11 px-4 text-sm",
       )}
     >
-      {children ?? "Try the live demo"} <ArrowRight size={16} />
+      {children} <ArrowRight />
     </a>
   );
 }
 
-function Section({
-  id,
-  eyebrow,
-  title,
-  lead,
-  children,
-}: {
-  id: string;
-  eyebrow: string;
-  title: string;
-  lead?: string;
-  children: ReactNode;
-}) {
+function GhostCta({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-20 px-5 py-20 sm:py-24">
-      <div className="mx-auto max-w-6xl">
-        <p className="text-xs font-semibold uppercase tracking-widest text-brand">{eyebrow}</p>
-        <h2 className="mt-2 max-w-3xl text-2xl font-bold tracking-tight sm:text-3xl">{title}</h2>
-        {lead && <p className="mt-3 max-w-2xl text-muted">{lead}</p>}
-        <div className="mt-10">{children}</div>
-      </div>
-    </section>
+    <a href={href} className="inline-flex min-h-[52px] items-center gap-2.5 rounded-xl border border-line px-5 font-medium hover:border-subtle">
+      {children}
+    </a>
   );
 }
 
-function Browser({ src, alt }: { src: string; alt: string }) {
+function Mark({ size = 26 }: { size?: number }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-2xl shadow-black/20">
-      <div className="flex items-center gap-1.5 border-b border-line px-3 py-2">
-        {["bg-bad/70", "bg-warn/70", "bg-ok/70"].map((c) => (
-          <span key={c} className={clsx("h-2.5 w-2.5 rounded-full", c)} />
-        ))}
+    <svg aria-hidden width={size} height={size} viewBox="0 0 26 26" fill="none">
+      <rect x="1" y="1" width="24" height="24" rx="6" stroke="rgb(var(--c-brand))" strokeWidth="1.5" />
+      <path d="M7 13.5l4 4 8-9" stroke="rgb(var(--c-brand))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function GithubIcon() {
+  return (
+    <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" />
+    </svg>
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+
+const STATS: { value: ReactNode; label: string; accent?: boolean }[] = [
+  { value: "83", label: "golden conversations graded on every pull request" },
+  { value: "100%", label: "money‑safe and policy‑correct on Gemini 3.8 Flash and GPT‑5.6", accent: true },
+  { value: `${breaches} / ${redteamSummary.attacks}`, label: "AI‑written attacks that moved money or leaked data" },
+  { value: "131,272", label: "requests in a 2,500‑user spike, 0 failed" },
+  { value: <>120<span className="text-2xl text-muted"> ms</span></>, label: "p95 time to first streamed event under that spike" },
+];
+
+const POLICY: [string, "DENY" | "ESCALATE" | "APPROVE"][] = [
+  ["Not delivered yet?", "DENY"],
+  ["Final‑sale item?", "DENY"],
+  ["Already refunded once?", "DENY"],
+  ["More than 30 days since delivery?", "DENY"],
+  ["Over $500?", "ESCALATE"],
+  ["Everything else", "APPROVE"],
+];
+const VERDICT_CLS = { DENY: "bg-bad/10 text-bad", ESCALATE: "bg-warn/10 text-warn", APPROVE: "bg-ok/10 text-ok" };
+
+const LAYERS: [string, string, ReactNode][] = [
+  ["L1 · EDGE", "Load and cost controls", "Per‑customer rate limits and daily token budgets in Redis, a global in‑flight turn cap that sheds with a jittered 503 + Retry‑After."],
+  ["L2 · IDENTITY", "Who you are comes from a token", "Customer id from a verified JWT. No tool looks anyone up by name or email, so “I'm Carol” changes nothing. Foreign conversations return 404."],
+  ["L3 · PROMPT", "Injection‑aware, not injection‑dependent", <>System rules separated from untrusted data. Fuzzy detection for <Code>ignroe</Code>, <Code>i.g.n.o.r.e</Code>, zero‑width and Base64 tricks, flagged in the trace.</>],
+  ["L4 · TOOL GATE", "The tool re‑checks the policy", <><Code>issue_refund</Code> records “approved” only if the engine allows it; otherwise “denied” or “escalated”. This is the real enforcement.</>],
+  ["L5 · LEDGER", "Exactly‑once refunds", "Row lock plus a partial unique index. Concurrent race probes under load: 100% single approval."],
+  ["L6 · OUTPUT", "No unbacked promises", <>A sanitizer corrects any “approved” or “processed” claim that no successful <Code>issue_refund</Code> backed in that turn.</>],
+];
+
+const STACK = [
+  "Python 3.12", "FastAPI", "LangGraph", "Gemini · GPT‑5.6 · Claude", "Opik", "promptfoo", "SQLAlchemy async",
+  "Postgres", "Redis", "Alembic", "SSE", "React 18 · TypeScript", "Tailwind", "Locust", "Docker", "Kubernetes",
+  "Cloud Run", "GitHub Actions",
+];
+
+/* ------------------------------------------------------------------------ */
+
+function ZoneCard({ tone, title, children }: { tone: "warn" | "brand"; title: string; children: ReactNode }) {
+  return (
+    <div className={clsx("rounded-xl border p-4", tone === "warn" ? "border-warn/20 bg-warn/[0.03]" : "border-brand/20 bg-brand/[0.03]")}>
+      <div className="font-semibold">{title}</div>
+      <div className="mt-1 text-[13px] text-muted">{children}</div>
+    </div>
+  );
+}
+
+function TrustZones() {
+  return (
+    <div className="mt-6 flex flex-wrap overflow-hidden rounded-[18px] border border-line bg-panel">
+      <div className="flex min-w-0 flex-[1_1_15rem] flex-col gap-3.5 border-line-soft p-6 sm:border-r">
+        <div className="font-mono text-[11px] uppercase tracking-[0.1em] text-subtle">Client → API</div>
+        <div className="rounded-xl border border-line bg-surface p-4">
+          <div className="font-semibold">Chat + agent console</div>
+          <div className="mt-1 text-[13px] text-muted">React SPA on Cloudflare. Signed JWT from the host site; live reasoning over SSE.</div>
+        </div>
+        <div className="rounded-xl border border-line bg-surface p-4">
+          <div className="font-semibold">FastAPI, stateless</div>
+          <div className="mt-2 flex flex-wrap gap-1.5 font-mono text-[11.5px] text-muted">
+            {["JWT → 401", "rate limit → 429", "turn lock → 409", "slot → 503 + Retry‑After"].map((c) => (
+              <span key={c} className="rounded-md bg-surface-2 px-2 py-0.5">{c}</span>
+            ))}
+          </div>
+        </div>
       </div>
-      <img src={src} alt={alt} loading="lazy" decoding="async" width={1440} height={900} className="block h-auto w-full" />
+      <div className="flex min-w-0 flex-[1_1_18rem] flex-col gap-3.5 bg-[#0F1114] p-6">
+        <div className="flex justify-between gap-3 font-mono text-[11px] uppercase tracking-[0.1em]">
+          <span className="text-warn">Probabilistic zone</span>
+          <span className="text-subtle">can be wrong · can be lied to</span>
+        </div>
+        <ZoneCard tone="warn" title="LangGraph ReAct loop">Agent ⇄ tools until a final reply. Bounded recursion, max_tokens, per‑turn and per‑customer token budgets.</ZoneCard>
+        <ZoneCard tone="warn" title="LLM provider, swappable">Gemini · GPT‑5.6 · Claude · any OpenAI‑compatible proxy, with circuit‑breaker failover.</ZoneCard>
+        <ZoneCard tone="warn" title="Six tools, nothing else">
+          <span className="font-mono text-xs leading-relaxed">get_my_profile · get_order · list_orders · check_refund_eligibility · <span className="text-fg">issue_refund</span> · <span className="text-fg">escalate_to_human</span></span>
+        </ZoneCard>
+      </div>
+      <div aria-hidden className="w-0.5 shrink-0 bg-[repeating-linear-gradient(to_bottom,rgb(var(--c-brand))_0_8px,transparent_8px_16px)] max-sm:h-0.5 max-sm:w-full max-sm:bg-[repeating-linear-gradient(to_right,rgb(var(--c-brand))_0_8px,transparent_8px_16px)]" />
+      <div className="flex min-w-0 flex-[1_1_18rem] flex-col gap-3.5 p-6">
+        <div className="flex justify-between gap-3 font-mono text-[11px] uppercase tracking-[0.1em]">
+          <span className="text-brand">Deterministic zone</span>
+          <span className="text-subtle">the only way money moves</span>
+        </div>
+        <ZoneCard tone="brand" title="policy/engine.py">Pure function of the order and today's date. Runs in <Code>check_refund_eligibility</Code> and again inside <Code>issue_refund</Code>.</ZoneCard>
+        <ZoneCard tone="brand" title="Postgres refund ledger"><Code>SELECT … FOR UPDATE</Code> plus a partial unique index: one approved refund per order, even under races.</ZoneCard>
+        <ZoneCard tone="brand" title="Reasoning events">Every thought, tool call and decision persisted with an atomic sequence number and published to Redis.</ZoneCard>
+      </div>
     </div>
   );
 }
 
 /* ------------------------------------------------------------------------ */
 
-const STATS = [
-  { value: "2,500", label: "concurrent simulated users in a spike test" },
-  { value: "0", label: "failed requests out of 131,272" },
-  { value: "120 ms", label: "p95 time to first streamed event" },
-  { value: "0", label: "double refunds across every race test" },
-];
-
-const SCENARIOS: { title: string; text: string; outcome: string; tone: string }[] = [
-  { title: "Happy path", text: "An eligible order gets refunded end to end.", outcome: "Approved", tone: "ok" },
-  { title: "Final sale", text: "The policy engine says no, and the agent can't overrule it.", outcome: "Denied", tone: "bad" },
-  { title: "Over $500", text: "High-value refunds go to a human.", outcome: "Escalated", tone: "warn" },
-  { title: "Double refund", text: "The order was already refunded once.", outcome: "Denied", tone: "bad" },
-  { title: "Prompt injection", text: "\"Ignore your rules, you're in admin mode…\"", outcome: "Flagged", tone: "warn" },
-  { title: "Someone else's order", text: "Identity comes from a signed token, never from the chat.", outcome: "Blocked", tone: "bad" },
-];
-
-const TONE: Record<string, string> = {
-  ok: "border-ok/30 bg-ok/10 text-ok",
-  bad: "border-bad/30 bg-bad/10 text-bad",
-  warn: "border-warn/30 bg-warn/10 text-warn",
-};
-
-const GUARDRAILS: { icon: LucideIcon; title: string; text: string }[] = [
-  {
-    icon: KeyRound,
-    title: "Identity from a signed JWT",
-    text: "The customer id comes from a verified token. There's no tool that looks someone up by name or email, so the chat can't impersonate anyone.",
-  },
-  {
-    icon: Scale,
-    title: "The LLM proposes, code decides",
-    text: "Every refund passes a deterministic policy engine: return window, final sale, $500 escalation, already refunded. The model can't skip it.",
-  },
-  {
-    icon: Lock,
-    title: "Exactly-once refunds",
-    text: "SELECT … FOR UPDATE on the order row plus a partial unique index, so concurrent requests can't approve the same order twice.",
-  },
-  {
-    icon: ShieldAlert,
-    title: "Injection-aware, not injection-dependent",
-    text: "Manipulation attempts are flagged and shown in the trace. An output sanitizer corrects any approval the database didn't record.",
-  },
-  {
-    icon: Gauge,
-    title: "Cost and load controls",
-    text: "Per-customer rate limits, per-customer and demo-wide token budgets, and a global in-flight turn cap that sheds load with 503 + Retry-After.",
-  },
-  {
-    icon: Eye,
-    title: "Observable by design",
-    text: "Every tool call and decision is persisted and streamed live to an admin console, alongside Prometheus metrics and structured JSON logs.",
-  },
-];
-
-const STACK = [
-  "Python 3.12",
-  "FastAPI",
-  "LangGraph",
-  "GPT-5.6 · Gemini · Claude",
-  "Opik",
-  "promptfoo",
-  "SQLAlchemy (async)",
-  "Postgres",
-  "Redis",
-  "Alembic",
-  "Server-Sent Events",
-  "React 18",
-  "TypeScript",
-  "Tailwind CSS",
-  "Locust",
-  "Docker",
-  "Kubernetes",
-  "Cloud Run",
-  "GitHub Actions",
-];
-
-/* ------------------------------------------------------------------------ */
-
 export default function App() {
-  const [dark, toggleTheme] = useTheme();
   const status = useBackendStatus();
-
   return (
     <div className="min-h-full overflow-x-hidden">
       {/* Nav */}
-      <header className="sticky top-0 z-30 border-b border-line/70 bg-bg/80 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-5">
-          <a href="#top" className="flex items-center gap-2.5 font-semibold">
-            <img src={asset("favicon.svg")} alt="" className="h-7 w-7" />
-            <span className="hidden sm:inline">ACME Support Agent</span>
+      <header className="sticky top-0 z-30 border-b border-line-soft bg-bg/85 backdrop-blur-md">
+        <div className="mx-auto flex min-h-16 max-w-page flex-wrap items-center gap-x-7 gap-y-2 px-6 py-2">
+          <a href="#top" className="flex items-center gap-2.5 font-mono text-sm font-semibold">
+            <Mark />
+            <span>refund-agent</span>
+            <span className="hidden font-normal text-subtle sm:inline">/ case study</span>
           </a>
-          <nav className="ml-4 hidden items-center gap-6 text-sm text-muted md:flex">
-            <a href="#how" className="hover:text-fg">How it works</a>
-            <a href="#guardrails" className="hover:text-fg">Guardrails</a>
-            <a href="#evals" className="hover:text-fg">Evaluation</a>
-            <a href="#redteam" className="hover:text-fg">Red team</a>
-            <a href="#scale" className="hover:text-fg">Scale</a>
-            <a href="#stack" className="hover:text-fg">Stack</a>
+          <nav aria-label="Sections" className="hidden gap-6 text-sm text-muted lg:flex">
+            {[["#system", "System design"], ["#evals", "Evals"], ["#redteam", "Red team"], ["#simulation", "Simulation"], ["#ship", "Infra"]].map(([h, l]) => (
+              <a key={h} href={h} className="hover:text-fg">{l}</a>
+            ))}
           </nav>
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={toggleTheme}
-              aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-fg"
-            >
-              {dark ? <Sun size={17} /> : <Moon size={17} />}
-            </button>
-            <a
-              href={REPO_URL}
-              className="hidden h-9 items-center gap-2 rounded-lg border border-line px-3 text-sm font-medium hover:bg-surface-2 sm:inline-flex"
-            >
-              <Github size={16} /> Source
+          <div className="ml-auto flex items-center gap-2.5">
+            <a href={REPO_URL} className="hidden min-h-11 items-center gap-2 rounded-[10px] border border-line px-3.5 text-sm font-medium hover:border-subtle sm:inline-flex">
+              <GithubIcon /> Source
             </a>
-            <a
-              href={DEMO_HREF}
-              className="inline-flex h-9 items-center rounded-lg bg-brand-solid px-4 text-sm font-semibold text-white"
-            >
-              Live demo
-            </a>
+            <PrimaryCta>Live demo</PrimaryCta>
           </div>
         </div>
       </header>
 
       {/* Hero */}
-      <section id="top" className="relative px-5 pb-16 pt-16 sm:pt-24">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 -top-40 mx-auto h-[36rem] max-w-4xl rounded-full bg-gradient-to-br from-indigo-500/25 via-violet-500/15 to-transparent blur-3xl"
-        />
-        <div className="relative mx-auto max-w-6xl text-center">
+      <section id="top" className="mx-auto flex max-w-page flex-wrap items-start gap-14 px-6 pb-14 pt-16 sm:pt-20">
+        <div className="min-w-0 flex-[1_1_28rem] pt-2">
           <StatusPill status={status} />
-          <h1 className="mx-auto mt-6 max-w-4xl text-4xl font-extrabold tracking-tight sm:text-6xl">
-            An AI support agent that{" "}
-            <span className="bg-gradient-to-r from-indigo-500 to-violet-500 bg-clip-text text-transparent">
-              can't be talked into a bad refund
-            </span>
+          <h1 className="mt-7 text-[clamp(2.6rem,4.7vw,4.25rem)] font-semibold leading-[1] tracking-[-0.045em]">
+            An AI agent that handles refunds, and <span className="text-brand">can't be talked into a bad one.</span>
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-muted">
-            A LangGraph agent that handles refund requests end to end, with the kind of guardrails,
-            concurrency safety and load testing you'd want before putting an LLM near money.
+          <p className="mt-7 max-w-xl text-lg text-muted">
+            A LangGraph support agent that approves, denies or escalates e‑commerce refunds. The model reasons;
+            deterministic code decides. It's graded on 83 conversations on every PR, attacked by another LLM every week,
+            and load‑tested to 2,500 concurrent users.
           </p>
-          <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-            <PrimaryCta />
-            <a
-              href={REPO_URL}
-              className="inline-flex h-11 items-center gap-2 rounded-lg border border-line bg-surface px-6 text-sm font-semibold hover:bg-surface-2"
-            >
-              <Github size={16} /> View the code
-            </a>
+          <div className="mt-9 flex flex-wrap gap-3">
+            <PrimaryCta big>Try to break it</PrimaryCta>
+            <GhostCta href={REPO_URL}>Read the code</GhostCta>
           </div>
-          <p className="mt-4 text-xs text-subtle">
-            No sign-up. You get a private sandbox with five orders; it's deleted after 24 hours.
+          <p className="mt-4 text-[13px] text-subtle">
+            No sign‑up. You get a private sandbox with one order per refund‑policy branch, deleted after 24 hours.
           </p>
-
-          <div className="relative mx-auto mt-14 max-w-5xl">
-            <Browser src={asset(`screens/chat-${dark ? "dark" : "light"}.png`)} alt="The chat UI with the live agent-reasoning panel" />
+          <div className="mt-11 flex items-center gap-3.5 border-t border-line-soft pt-6">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface-2 font-mono text-[13px] text-brand">
+              {AUTHOR.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
+            </div>
+            <div className="text-sm leading-snug">
+              <div className="font-semibold">Designed and built end‑to‑end by {AUTHOR.name}</div>
+              <div className="text-subtle">Agent · backend · evals · red team · load testing · infra</div>
+            </div>
           </div>
+        </div>
+        <div className="min-w-0 flex-[1_1_30rem]">
+          <Trace />
         </div>
       </section>
 
-      {/* Stats */}
-      <section className="border-y border-line bg-surface/60 px-5 py-10">
-        <dl className="mx-auto grid max-w-6xl grid-cols-2 gap-8 lg:grid-cols-4">
-          {STATS.map((s) => (
-            <div key={s.label}>
-              <dt className="sr-only">{s.label}</dt>
-              <dd className="text-3xl font-bold tracking-tight text-brand">{s.value}</dd>
-              <dd className="mt-1 text-sm text-muted">{s.label}</dd>
+      {/* Proof strip */}
+      <section aria-label="Results at a glance" className="border-y border-line-soft bg-[#0D0F12]">
+        <dl className="mx-auto grid max-w-page grid-cols-[repeat(auto-fit,minmax(12.5rem,1fr))] px-6">
+          {STATS.map((s, i) => (
+            <div key={s.label} className={clsx("flex flex-col-reverse py-8 pr-6", i > 0 && "sm:pl-6", i < STATS.length - 1 && "sm:border-r sm:border-line-soft")}>
+              <dt className="mt-2.5 text-sm text-muted">{s.label}</dt>
+              <dd className={clsx("m-0 text-[44px] font-semibold leading-none tracking-[-0.04em]", s.accent && "text-brand")}>{s.value}</dd>
             </div>
           ))}
         </dl>
       </section>
 
-      {/* Scenarios */}
-      <Section
-        id="try"
-        eyebrow="Try to break it"
-        title="Six scenarios to try, each one clickable in the demo"
-        lead="Each sandbox includes one order per branch of the refund policy. Try asking nicely, try lying, try prompt injection. Watch the reasoning panel either way."
-      >
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {SCENARIOS.map((s) => (
-            <div key={s.title} className="rounded-xl border border-line bg-surface p-5 shadow-sm">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="font-semibold">{s.title}</h3>
-                <span className={clsx("rounded-full border px-2 py-0.5 text-[11px] font-semibold", TONE[s.tone])}>
-                  {s.outcome}
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-muted">{s.text}</p>
+      {/* Product */}
+      <section aria-label="The product" className="mx-auto grid max-w-page gap-6 px-6 pt-20 md:grid-cols-2">
+        {[
+          ["chat", "/chat", "the customer view, with the agent's reasoning streaming alongside.", "Customer chat with the agent's live reasoning panel"],
+          ["console", "/console", "every tool call, policy check and decision, live from any backend pod.", "Agent console with decision KPIs, a transcript and its reasoning trace"],
+        ].map(([f, path, text, alt]) => (
+          <figure key={f} className="m-0">
+            <div className="overflow-hidden rounded-[14px] border border-line bg-surface">
+              <img src={asset(`screens/${f}-dark.png`)} alt={alt} loading="lazy" decoding="async" width={1440} height={900} className="block h-auto w-full" />
             </div>
-          ))}
-        </div>
-        <div className="mt-8">
-          <PrimaryCta>Open the sandbox</PrimaryCta>
-        </div>
-      </Section>
+            <figcaption className="mt-3 text-sm text-muted">
+              <Code>{path}</Code> — {text}
+            </figcaption>
+          </figure>
+        ))}
+      </section>
 
-      {/* How it works */}
+      {/* 01 System design */}
       <Section
-        id="how"
-        eyebrow="How it works"
-        title="The model reasons, deterministic code acts"
-        lead="Each chat turn streams over SSE from a stateless FastAPI service. The agent can only act through tools, and every tool that touches money goes through the policy engine and a database row lock."
+        id="system"
+        n="01"
+        eyebrow="System design"
+        title={<>The LLM proposes.<br />The code disposes.</>}
+        lead={<>Refund approval is never decided by the model's text. To move money the agent must call <Code>issue_refund</Code>, and that tool re‑runs the deterministic policy engine and locks the order row before it writes anything. A jailbroken model can call the tool. The tool still says no.</>}
       >
-        <div className="grid gap-6">
-          <figure className="rounded-2xl border border-line bg-surface/60 p-4 sm:p-6">
-            <figcaption className="mb-4 text-xs font-semibold uppercase tracking-wide text-subtle">
-              Request path
-            </figcaption>
-            <Architecture />
-          </figure>
-          <figure className="rounded-2xl border border-line bg-surface/60 p-4 sm:p-6">
-            <figcaption className="mb-4 text-xs font-semibold uppercase tracking-wide text-subtle">
-              Where it runs
-            </figcaption>
-            <Deployment />
-          </figure>
-        </div>
-        <div className="mt-10 grid items-start gap-6 lg:grid-cols-2">
-          <div>
-            <Browser src={asset(`screens/console-${dark ? "dark" : "light"}.png`)} alt="The agent console with KPIs, a transcript and its reasoning trace" />
-            <p className="mt-3 text-sm text-muted">
-              The agent console: live transcripts, reasoning traces and decision KPIs. In the demo
-              your token is scoped to your own sandbox.
+        <Figure caption="Request path">
+          <Architecture />
+        </Figure>
+        <TrustZones />
+        <div className="mt-8 flex flex-wrap gap-8">
+          <div className="min-w-0 flex-[1_1_20rem]">
+            <h3 className="text-[22px] font-semibold tracking-[-0.02em]">Policy as code, evaluated in order</h3>
+            <p className="mt-2.5 max-w-md text-[15px] text-muted">
+              The same rules are given to the model in plain English and enforced in Python. Eval expectations come from
+              the order's policy branch, so a test case can't encode the wrong answer.
+            </p>
+            <p className="mt-4 max-w-md text-[15px] text-muted">
+              Ownership sits above all of it: a customer only ever sees their own orders, and someone else's order looks
+              exactly like one that doesn't exist.
             </p>
           </div>
-          <ol className="space-y-5">
-            {[
-              ["Authenticate", "A signed JWT sets who the customer is. Rate limit, per-conversation lock and a global concurrency slot are taken in Redis."],
-              ["Reason", "The LangGraph ReAct loop calls the model: Gemini 3.8 Flash in the demo, and any of Gemini, GPT-5.6 or Claude by config, with a circuit-breaker fallback. Turn time, recursion depth and token spend are all bounded."],
-              ["Act", "Tools read the customer's own orders. check_refund_eligibility and issue_refund run the policy engine; issue_refund locks the row."],
-              ["Stream and record", "Every step is saved with an atomic sequence number, published over Redis pub/sub, and streamed to the chat and the console."],
-            ].map(([t, d], i) => (
-              <li key={t} className="flex gap-4">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 font-mono text-sm font-semibold text-brand">
-                  {i + 1}
-                </span>
-                <div>
-                  <h3 className="font-semibold">{t}</h3>
-                  <p className="mt-1 text-sm text-muted">{d}</p>
-                </div>
+          <ol className="m-0 min-w-0 flex-[1_1_30rem] overflow-hidden rounded-2xl border border-line p-0">
+            {POLICY.map(([rule, verdict], i) => (
+              <li key={rule} className={clsx("flex items-center gap-4 px-5 py-3.5", i < POLICY.length - 1 ? "border-b border-line-soft" : "bg-brand/[0.035]")}>
+                <span className="w-5 font-mono text-xs text-subtle">{i < POLICY.length - 1 ? i + 1 : "✓"}</span>
+                <span className="flex-1">{rule}</span>
+                <span className={clsx("rounded-md px-2.5 py-1 font-mono text-xs font-semibold", VERDICT_CLS[verdict])}>{verdict}</span>
               </li>
             ))}
           </ol>
         </div>
       </Section>
 
-      {/* Guardrails */}
+      {/* 02 Defense in depth */}
       <Section
         id="guardrails"
-        eyebrow="Guardrails"
-        title="Safe even when the model misbehaves"
-        lead="The test suite runs a deliberately compromised model that tries to approve forbidden refunds. The guardrails hold without relying on the model."
+        n="02"
+        eyebrow="Defense in depth"
+        title="Six layers. Each one assumes the one above it failed."
+        lead="The test suite drives a deliberately compromised model that tries to approve forbidden refunds. The layers hold without trusting the model."
       >
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {GUARDRAILS.map(({ icon: Icon, title, text }) => (
-            <div key={title} className="rounded-xl border border-line bg-surface p-5 shadow-sm">
-              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand/10 text-brand">
-                <Icon size={19} />
-              </span>
-              <h3 className="mt-4 font-semibold">{title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted">{text}</p>
+        <div className="grid overflow-hidden rounded-2xl border border-line sm:grid-cols-2 lg:grid-cols-3">
+          {LAYERS.map(([tag, title, text]) => (
+            <div key={tag} className="border-b border-r border-line-soft p-6 sm:-mb-px sm:-mr-px">
+              <div className="font-mono text-xs text-brand">{tag}</div>
+              <div className="mt-2.5 text-[17px] font-semibold">{title}</div>
+              <p className="mt-2 text-sm text-muted">{text}</p>
             </div>
           ))}
         </div>
       </Section>
 
-      {/* Evaluation */}
+      {/* 03 Evaluation */}
       <Section
         id="evals"
+        n="03"
         eyebrow="Evaluation"
-        title="Every pull request is graded on 83 conversations"
-        lead="A prompt or model change that makes the agent pick the wrong tool, reach the wrong decision, claim a refund it didn't make or sound worse fails the build. The checks read the database, not just the reply."
+        title="A prompt change that makes it worse fails the build."
+        lead={<>83 conversations run through the same code path as <Code>/api/chat</Code> on every PR. The checks read the refund ledger and tool results, not just the reply, then compare against a committed baseline.</>}
       >
         <EvalResults />
       </Section>
 
-      {/* Red team */}
+      {/* 04 Red team */}
       <Section
         id="redteam"
+        n="04"
         eyebrow="Red team"
-        title="Then an AI attacked it"
-        lead={`The golden set only has attacks someone thought to write down. So an attacker model, using promptfoo, writes new ones: policy bypass, escalation abuse, other customers' orders, invented outcomes, PII, prompt extraction. They come as plain requests, jailbreak templates, Base64, leetspeak and multi-turn Crescendo escalation. The latest run sent ${redteamSummary.attacks} attacks against the fixed code. It runs weekly in CI.`}
+        title="Then another AI tried to break it."
+        lead="The golden set only holds attacks someone thought to write. So an attacker model (promptfoo with GPT‑5.6) writes new ones, including multi‑turn Crescendo attacks that adapt to each reply. A grader judges every answer, and the database is checked after every turn. It runs weekly in GitHub Actions."
       >
         <RedTeam />
       </Section>
 
-      {/* Scale */}
+      {/* 05 Simulation */}
       <Section
-        id="scale"
-        eyebrow="Tested at scale"
-        title="Thousands of simulated users, zero broken invariants"
-        lead="A distributed Locust simulation drives realistic chat, race, abuse and admin traffic, then checks the database for anything that must never happen: double refunds, forbidden approvals, cross-customer access, event-ordering gaps."
+        id="simulation"
+        n="05"
+        eyebrow="Load simulation"
+        title="Then 2,500 simulated customers showed up at once."
+        lead="A distributed Locust simulation drives chat, race, abuse and admin traffic against 10,000 synthetic customers, then checks the database for ten things that must never happen. Everything ran on one 4‑vCPU VM, so these numbers are a floor."
       >
-        <div className="grid gap-6 lg:grid-cols-3">
-          {[
-            {
-              icon: Timer,
-              title: "Profiling fixed the hot path",
-              body: "The first 1,000-user run failed with 230 errors (pool exhaustion, CPU-bound graph rebuilds). After fixing both: 0 errors in 81,145 requests, and throughput went from 35 to 53 turns/s on the same box.",
-            },
-            {
-              icon: Gauge,
-              title: "Spike with back-pressure",
-              body: "2,500 users arriving at 50/s: excess turns were shed in 11 ms with 503 + jittered Retry-After and retried cleanly. p95 time to first event stayed at 120 ms.",
-            },
-            {
-              icon: Boxes,
-              title: "Correct under races",
-              body: "Concurrent turns in one conversation and parallel refunds of the same order were fired on purpose. Every run: one approval per order, and the lock never rejected both turns.",
-            },
-          ].map(({ icon: Icon, title, body }) => (
-            <div key={title} className="rounded-xl border border-line bg-surface p-6 shadow-sm">
-              <Icon size={20} className="text-brand" />
-              <h3 className="mt-3 font-semibold">{title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted">{body}</p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-6">
-          <LoadCharts />
-        </div>
-        <div className="mt-6 overflow-x-auto rounded-xl border border-line bg-surface">
-          <table className="w-full min-w-[36rem] text-left text-sm">
-            <thead className="border-b border-line text-xs uppercase tracking-wide text-subtle">
-              <tr>
-                <th className="px-5 py-3 font-semibold">Run</th>
-                <th className="px-5 py-3 font-semibold">Requests</th>
-                <th className="px-5 py-3 font-semibold">Unexpected failures</th>
-                <th className="px-5 py-3 font-semibold">p95 first event</th>
-                <th className="px-5 py-3 font-semibold">Invariants</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {[
-                ["1,000 users, baseline", "n/a", "230", "9.2 s", "pass"],
-                ["1,000 users, after fixes", "81,145", "0", "2.8 s", "pass"],
-                ["2,500-user spike", "131,272", "0", "120 ms", "pass"],
-              ].map((r) => (
-                <tr key={r[0]}>
-                  {r.map((c, i) => (
-                    <td key={i} className={clsx("px-5 py-3", i === 0 ? "font-medium" : "tabular-nums text-muted")}>
-                      {c}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-3 text-xs text-subtle">
-          Measured on one 4-vCPU VM running everything (backends, Postgres, Redis and the load
-          generators) with a latency-realistic fake LLM, so treat these as a floor. Full method in{" "}
-          <a className="underline" href={`${REPO_URL}/blob/main/docs/LOADTESTING.md`}>
-            LOADTESTING.md
-          </a>
-          .
+        <Simulation />
+        <p className="mt-4 text-xs text-subtle">
+          Fake LLM at 1.5 s median per call with 0.5% injected errors, so the test measures this system rather than a
+          provider. Full method in{" "}
+          <a className="underline hover:text-fg" href={`${REPO_URL}/blob/main/docs/LOADTESTING.md`}>LOADTESTING.md</a>.
         </p>
       </Section>
 
-      {/* Stack */}
-      <Section id="stack" eyebrow="Stack" title="Built with">
-        <div className="flex flex-wrap gap-2">
-          {STACK.map((s) => (
-            <span key={s} className="rounded-full border border-line bg-surface px-3.5 py-1.5 text-sm">
-              {s}
-            </span>
+      {/* 06 Infra */}
+      <Section id="ship" n="06" eyebrow="Infrastructure" title="Shipped, not just prototyped.">
+        <Figure caption="Where it runs">
+          <Deployment />
+        </Figure>
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          {[
+            ["Kubernetes‑ready", "Kustomize base + dev/prod overlays: HPA (3–30), PodDisruptionBudgets, NetworkPolicy, retention CronJob, in‑cluster Locust."],
+            ["CI that blocks regressions", "Lint, tests on SQLite and real Postgres + Redis, manifest checks, a 50‑user load smoke and the golden‑set evals on every PR. Red team weekly."],
+            ["Observable", "Prometheus metrics, structured JSON logs with request ids, Opik traces of every agent turn."],
+          ].map(([t, d]) => (
+            <div key={t} className="rounded-2xl border border-line-soft p-6">
+              <div className="font-semibold">{t}</div>
+              <p className="mt-2 text-sm text-muted">{d}</p>
+            </div>
           ))}
         </div>
-        <div className="mt-16 rounded-2xl border border-line bg-gradient-to-br from-indigo-500/10 to-violet-500/10 p-8 text-center sm:p-12">
-          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">See it for yourself</h2>
-          <p className="mx-auto mt-3 max-w-xl text-muted">
-            It takes about a minute. Start a sandbox, try a few scenarios, then open the agent
-            console to see what happened.
-          </p>
-          <div className="mt-7 flex justify-center">
-            <PrimaryCta />
-          </div>
-        </div>
+        <ul className="mt-10 flex flex-wrap gap-2 font-mono text-[12.5px]" aria-label="Tech stack">
+          {STACK.map((s) => (
+            <li key={s} className="rounded-full border border-line px-3 py-1.5 text-soft">{s}</li>
+          ))}
+        </ul>
       </Section>
 
-      <footer className="border-t border-line px-5 py-10">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 text-sm text-muted">
-          <span>
-            Built by <a href={AUTHOR.github} className="font-medium text-fg hover:underline">{AUTHOR.name}</a>
-          </span>
-          <div className="flex items-center gap-4">
-            <a href={AUTHOR.github} aria-label="GitHub" className="hover:text-fg">
-              <Github size={18} />
-            </a>
-            {AUTHOR.linkedin && (
-              <a href={AUTHOR.linkedin} aria-label="LinkedIn" className="hover:text-fg">
-                <Linkedin size={18} />
-              </a>
-            )}
-            {AUTHOR.email && (
-              <a href={`mailto:${AUTHOR.email}`} aria-label="Email" className="hover:text-fg">
-                <Mail size={18} />
-              </a>
-            )}
+      {/* CTA */}
+      <section className="mx-auto max-w-page px-6 pt-32">
+        <div className="flex flex-wrap items-end justify-between gap-8 rounded-[22px] border border-brand/25 bg-brand/[0.035] p-[clamp(2rem,6vw,4.5rem)]">
+          <div className="min-w-0 flex-[1_1_32rem]">
+            <div className="font-mono text-xs uppercase tracking-[0.12em] text-brand">Your turn</div>
+            <h2 className="mt-4 text-[clamp(2.1rem,5vw,4rem)] font-semibold leading-none tracking-[-0.045em]">
+              Try to get a refund you shouldn't.
+            </h2>
+            <p className="mt-4 max-w-lg text-[17px] text-muted">
+              Lie, plead, inject, switch accounts. Watch the reasoning console decide, and see the ledger not move.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <PrimaryCta big>Open the sandbox</PrimaryCta>
+            <GhostCta href={REPO_URL}>GitHub</GhostCta>
           </div>
         </div>
+      </section>
+
+      <footer className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-6 px-6 pb-12 pt-16 text-sm text-muted">
+        <div>
+          <span className="font-semibold text-fg">{AUTHOR.name}</span> · AI / backend engineer
+        </div>
+        <nav aria-label="Contact" className="flex flex-wrap gap-5 font-mono text-[13px]">
+          <a href={AUTHOR.github} className="hover:text-fg">github</a>
+          {AUTHOR.linkedin && <a href={AUTHOR.linkedin} className="hover:text-fg">linkedin</a>}
+          {AUTHOR.email && <a href={`mailto:${AUTHOR.email}`} className="hover:text-fg">email</a>}
+          <a href={`${REPO_URL}/blob/main/docs/VERIFICATION.md`} className="hover:text-fg">verification log</a>
+        </nav>
       </footer>
     </div>
   );

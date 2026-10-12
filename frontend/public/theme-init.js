@@ -1,7 +1,8 @@
-// Apply the saved/OS theme before first paint (avoids a light→dark flash).
+// Apply the theme before first paint (avoids a light→dark flash). Dark is the
+// default, matching the landing page; a saved "light" choice is respected.
 // A separate file rather than inline so a strict CSP (script-src 'self') allows it.
 try {
-  var t = localStorage.getItem("acme.theme");
-  if (t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches))
-    document.documentElement.classList.add("dark");
-} catch (e) {}
+  if (localStorage.getItem("acme.theme") !== "light") document.documentElement.classList.add("dark");
+} catch (e) {
+  document.documentElement.classList.add("dark");
+}
