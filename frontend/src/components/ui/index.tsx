@@ -21,7 +21,7 @@ export function Button({
           lg: "h-11 px-6 text-sm",
         }[size],
         {
-          primary: "bg-brand-solid text-white shadow-sm shadow-brand/20 hover:bg-brand-solid/90",
+          primary: "bg-brand-solid font-semibold text-on-brand shadow-sm shadow-brand/20 hover:bg-brand-solid/90",
           secondary: "border border-line bg-surface text-fg hover:bg-surface-2",
           ghost: "text-muted hover:bg-surface-2 hover:text-fg",
         }[variant],

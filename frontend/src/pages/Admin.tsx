@@ -304,7 +304,7 @@ export default function Admin() {
                       className={clsx(
                         "max-w-[90%] rounded-xl px-3 py-2 text-sm",
                         m.role === "user"
-                          ? "whitespace-pre-wrap bg-brand-solid text-white"
+                          ? "whitespace-pre-wrap bg-brand-solid text-on-brand"
                           : "border border-line bg-surface",
                       )}
                     >

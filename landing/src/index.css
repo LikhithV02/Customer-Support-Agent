@@ -2,38 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Semantic colour tokens (RGB channels so Tailwind opacity modifiers work). */
+/*
+ * Semantic colour tokens (RGB channels so Tailwind opacity modifiers work).
+ * Same palette as the chat app's dark theme: near-black ink, bone text, one
+ * lime signal colour, and outcome colours that differ in lightness too.
+ */
 :root {
-  --c-bg: 246 247 251;
-  --c-surface: 255 255 255;
-  --c-surface-2: 240 242 247;
-  --c-line: 224 228 237;
-  --c-fg: 15 23 42;
-  --c-muted: 71 85 105;
-  --c-subtle: 120 132 153;
-  --c-brand: 79 70 229;
-  --c-brand-solid: 79 70 229;
-  --c-ok: 4 138 96;
-  --c-warn: 180 100 4;
-  --c-bad: 214 32 72;
-  --c-info: 2 122 186;
-  color-scheme: light;
-}
-
-.dark {
-  --c-bg: 8 11 20;
-  --c-surface: 15 20 33;
-  --c-surface-2: 23 29 46;
-  --c-line: 38 46 66;
-  --c-fg: 226 232 240;
-  --c-muted: 156 168 190;
-  --c-subtle: 106 120 145;
-  --c-brand: 139 148 255;
-  --c-brand-solid: 91 88 235;
-  --c-ok: 52 211 153;
-  --c-warn: 251 191 36;
-  --c-bad: 251 113 133;
-  --c-info: 56 189 248;
+  --c-bg: 10 11 13;
+  --c-panel: 13 15 18;
+  --c-surface: 17 19 23;
+  --c-surface-2: 22 25 30;
+  --c-line: 36 39 46;
+  --c-line-soft: 28 31 37;
+  --c-fg: 237 235 230;
+  --c-soft: 201 204 210;
+  --c-muted: 163 166 174;
+  --c-subtle: 124 128 138;
+  --c-brand: 200 245 96;
+  --c-on-brand: 10 11 13;
+  --c-ok: 91 227 138;
+  --c-warn: 255 181 71;
+  --c-bad: 255 122 102;
+  --c-info: 138 180 255;
   color-scheme: dark;
 }
 
@@ -46,19 +36,23 @@ body {
   @apply bg-bg font-sans text-fg antialiased;
 }
 
-:focus-visible {
-  @apply outline-none ring-2 ring-brand/60 ring-offset-2 ring-offset-bg;
+::selection {
+  @apply bg-brand text-on-brand;
 }
 
-/* Architecture diagram: data flowing along the edges. */
+:focus-visible {
+  @apply rounded-md outline-none ring-2 ring-brand ring-offset-2 ring-offset-bg;
+}
+
+/* Diagrams: data flowing along the edges. */
 @keyframes flow {
   to {
-    stroke-dashoffset: -24;
+    stroke-dashoffset: -16;
   }
 }
 .flow {
-  stroke-dasharray: 6 6;
-  animation: flow 1.2s linear infinite;
+  stroke-dasharray: 6 10;
+  animation: flow 1.1s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

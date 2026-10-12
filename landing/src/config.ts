@@ -9,7 +9,7 @@ export const API_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/,
 export const REPO_URL = "https://github.com/LikhithV02/Customer-Support-Agent";
 
 export const AUTHOR = {
-  name: "LikhithV02", // your name as it should appear in the footer
+  name: "Likhith V", // your name as it should appear in the byline and footer
   github: "https://github.com/LikhithV02",
   linkedin: "", // e.g. https://www.linkedin.com/in/<you>
   email: "", // shown as a mailto link when set

@@ -2,41 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Semantic colour tokens (RGB channels so Tailwind opacity modifiers work). */
+/*
+ * Semantic colour tokens (RGB channels so Tailwind opacity modifiers work).
+ * Shared with the landing page: near-black ink, bone text, one lime signal.
+ * Dark is the default; light keeps the same identity with ink buttons.
+ */
 :root {
-  --c-bg: 246 247 251;
-  --c-surface: 255 255 255;
-  --c-surface-2: 240 242 247;
-  --c-line: 224 228 237;
-  --c-fg: 15 23 42;
-  --c-muted: 71 85 105;
-  --c-subtle: 120 132 153;
-  --c-brand: 79 70 229;
-  --c-brand-solid: 79 70 229;
-  --c-accent: 124 58 237;
-  --c-ok: 4 138 96;
-  --c-warn: 180 100 4;
-  --c-bad: 214 32 72;
-  --c-info: 2 122 186;
+  --c-bg: 246 245 240;
+  --c-surface: 255 255 252;
+  --c-surface-2: 238 237 230;
+  --c-line: 222 220 211;
+  --c-fg: 10 11 13;
+  --c-muted: 74 77 84;
+  --c-subtle: 108 111 118;
+  --c-brand: 77 124 15;
+  --c-brand-solid: 10 11 13;
+  --c-on-brand: 200 245 96;
+  --c-accent: 37 99 235;
+  --c-ok: 22 128 61;
+  --c-warn: 161 98 7;
+  --c-bad: 196 50 38;
+  --c-info: 37 99 235;
   color-scheme: light;
 }
 
 .dark {
-  --c-bg: 8 11 20;
-  --c-surface: 15 20 33;
-  --c-surface-2: 23 29 46;
-  --c-line: 38 46 66;
-  --c-fg: 226 232 240;
-  --c-muted: 156 168 190;
-  --c-subtle: 106 120 145;
-  --c-brand: 139 148 255;
-  --c-brand-solid: 91 88 235;
-  --c-accent: 167 139 250;
-  --c-ok: 52 211 153;
-  --c-warn: 251 191 36;
-  --c-bad: 251 113 133;
-  --c-info: 56 189 248;
+  --c-bg: 10 11 13;
+  --c-surface: 17 19 23;
+  --c-surface-2: 22 25 30;
+  --c-line: 36 39 46;
+  --c-fg: 237 235 230;
+  --c-muted: 163 166 174;
+  --c-subtle: 124 128 138;
+  --c-brand: 200 245 96;
+  --c-brand-solid: 200 245 96;
+  --c-on-brand: 10 11 13;
+  --c-accent: 138 180 255;
+  --c-ok: 91 227 138;
+  --c-warn: 255 181 71;
+  --c-bad: 255 122 102;
+  --c-info: 138 180 255;
   color-scheme: dark;
+}
+
+::selection {
+  background: rgb(var(--c-brand-solid));
+  color: rgb(var(--c-on-brand));
 }
 
 html,
