@@ -109,7 +109,12 @@ export interface Meta {
   model: string;
   /** The primary model's id (e.g. "gpt-5.6-sol-medium"); null when scripted. */
   model_name?: string | null;
-  demo: { session_ttl_s: number; data_ttl_hours: number } | null;
+  demo: {
+    session_ttl_s: number;
+    data_ttl_hours: number;
+    /** How long chats are kept (archived) after the sandbox resets. */
+    transcript_retention_days?: number;
+  } | null;
 }
 
 export interface AdminStats {

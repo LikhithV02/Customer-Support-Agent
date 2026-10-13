@@ -51,7 +51,10 @@ anonymous visitors:
   notice and the guardrails behave identically. `LLM_FALLBACK_PROVIDER=fake`
   does the same when Anthropic errors, so the demo keeps working.
 - **Cleanup.** The retention job (`--demo-hours 24`) deletes sandboxes older than
-  a day, together with their orders, refunds and transcripts.
+  a day, together with their orders and refunds. Each conversation is first copied
+  into `conversation_archive` (transcript, every reasoning event, the sandbox's
+  orders and refunds, triage flags and a breach check), and archive rows are
+  deleted after `RETENTION_DAYS` (90). The app and the landing page tell visitors so.
 - **Optional bot check.** Set `TURNSTILE_SECRET` and the backend requires a
   Cloudflare Turnstile token on session creation. Rendering the widget in
   `frontend/src/pages/Welcome.tsx` is left to you: add it if bots show up.
@@ -224,6 +227,42 @@ app shows a "waking up" screen otherwise. Set `minScale: "1"` in
   to `1`.
 - **Wipe all sandboxes now:**
   `gcloud run jobs execute acme-support-api-cleanup --region $REGION --args="-m,app.maintenance.retention,--demo-hours,0"`.
+  Their conversations are archived first, like any other purge.
+
+### Reviewing what people tried
+
+Every demo conversation is archived when its sandbox is purged, so attacks stay
+reviewable for 90 days. The archive also records a **breach check** that doesn't
+trust the agent's guardrails. It works out what each order was allowed to end as
+from its fixture scenario and compares that with the refund ledger:
+
+| Breach | Meaning |
+|---|---|
+| `forbidden_approval` | an approved refund on a final-sale, over-$500, out-of-window or already-refunded order |
+| `double_refund` | more than one approved refund on one order |
+| `cross_customer` | a refund on an order the signed-in customer doesn't own |
+| `possible_data_leak` | a reply names another sandbox's customer or order id |
+
+A breach is logged at ERROR as `demo breach detected` when the cleanup job runs,
+so a Cloud Logging alert on that message pages you. Triage flags (`injection`,
+`output_corrected`, `error`, `scripted_fallback`, `unexpected_<decision>`,
+`possible_prompt_leak`, `no_decision`) mark conversations worth a look.
+
+Triage from `backend/`, against the demo database (`--demo-db` reads
+`DEMO_DATABASE_URL` from the repo-root `.env`):
+
+```bash
+python -m app.maintenance.attacks --demo-db list --days 7 --flagged --live
+python -m app.maintenance.attacks --demo-db show <conversation-id>
+python -m app.maintenance.attacks --demo-db scan          # live sandboxes; exits 1 on a breach
+python -m app.maintenance.attacks --demo-db export <conversation-id> --write
+```
+
+`export --write` appends the visitor's turns to `evals/cases/found_in_demo.yaml`
+as a live-model eval case, with the sandbox's order ids replaced by their
+branch placeholders (`{B}`, `{C}`, …). Run the evals, fix the agent until the
+case passes, and it guards every PR from then on. Each archived conversation
+also keeps its Opik trace ids for the model-level view.
 
 ## Screenshots
 

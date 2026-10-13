@@ -136,3 +136,32 @@ class ReasoningEvent(Base):
     node: Mapped[str] = mapped_column(String, default="")
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow)
+
+
+class ConversationArchive(Base):
+    """A conversation's full trace, kept after its live rows are purged.
+
+    The retention job writes one row per conversation before it deletes a
+    demo sandbox (see `app/maintenance/archive.py`), so attacks on the public
+    demo stay reviewable for `RETENTION_DAYS`. Self-contained: no foreign keys,
+    because the customer, orders and messages it describes are gone.
+    """
+
+    __tablename__ = "conversation_archive"
+
+    conversation_id: Mapped[str] = mapped_column(String, primary_key=True)
+    customer_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    started_at: Mapped[datetime] = mapped_column(TZDateTime(), index=True)
+    archived_at: Mapped[datetime] = mapped_column(TZDateTime(), default=utcnow, index=True)
+    turns: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_used: Mapped[int] = mapped_column(Integer, default=0)
+    # Refund rows written in this conversation: [{order_id, scenario, decision, amount}]
+    decisions: Mapped[list] = mapped_column(JSON, default=list)
+    # Triage tags derived from the trace, e.g. ["injection", "output_corrected"]
+    flags: Mapped[list] = mapped_column(JSON, default=list)
+    # Ground-truth violations: [{kind, detail}]. Empty means none were found.
+    breaches: Mapped[list] = mapped_column(JSON, default=list)
+    breach: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    opik_trace_ids: Mapped[list] = mapped_column(JSON, default=list)
+    # {"orders": [...], "messages": [...], "events": [...]}
+    transcript: Mapped[dict] = mapped_column(JSON, default=dict)

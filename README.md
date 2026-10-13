@@ -38,7 +38,9 @@ runs the tests, the evals and a load smoke on every PR. See
 **Public demo mode:** `AUTH_MODE=demo` gives every visitor a private sandbox
 customer (one order per refund-policy branch) plus a scoped admin token for the
 agent console, with per-IP and token-budget limits. When the budget runs out, turns
-fall back to the scripted model. It runs as a GitHub Pages case-study page,
+fall back to the scripted model. Every demo conversation is archived with a
+breach check when its sandbox resets, and a triage CLI turns any attack into an
+eval case ([how](docs/DEPLOY.md#reviewing-what-people-tried)). It runs as a GitHub Pages case-study page,
 a Cloudflare-hosted UI and a Cloud Run backend (Neon Postgres, Upstash Redis). See
 [docs/DEPLOY.md](docs/DEPLOY.md).
 

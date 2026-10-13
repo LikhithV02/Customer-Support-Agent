@@ -159,7 +159,7 @@ async def test_demo_purge_removes_old_sandboxes(client, demo, engine):
         )
         await s.commit()
 
-    assert await purge_demo(24) == 1
+    assert (await purge_demo(24))[0] == 1
     async with db.SessionLocal() as s:
         ids = set((await s.scalars(select(Customer.id).where(Customer.id.like("DM-%")))).all())
         orphan_orders = await s.scalar(
