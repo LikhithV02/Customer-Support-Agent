@@ -10,7 +10,10 @@ dangling by design.
 
 `--demo-hours N` additionally removes public-demo sandboxes (customers with
 the `DM-` prefix, see `app/demo.py`) older than N hours, including their
-orders and refunds: those are synthetic, not financial records.
+orders and refunds: those are synthetic, not financial records. Each sandbox's
+conversations are first copied into `conversation_archive` (with a breach
+check, see `app/maintenance/archive.py`) in the same transaction, and archive
+rows are themselves deleted after RETENTION_DAYS.
 """
 
 from __future__ import annotations
@@ -23,8 +26,17 @@ from sqlalchemy import delete, select
 
 from app.config import get_settings
 from app.db import session as db
-from app.db.models import Conversation, Customer, Message, Order, ReasoningEvent, Refund
+from app.db.models import (
+    Conversation,
+    ConversationArchive,
+    Customer,
+    Message,
+    Order,
+    ReasoningEvent,
+    Refund,
+)
 from app.demo import DEMO_PREFIX
+from app.maintenance.archive import archive
 
 BATCH = 500
 
@@ -51,9 +63,31 @@ async def purge(days: int, dry_run: bool = False) -> int:
     return total
 
 
-async def purge_demo(hours: int, dry_run: bool = False) -> int:
+async def purge_archive(days: int, dry_run: bool = False) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    async with db.SessionLocal() as session:
+        ids = (
+            await session.scalars(
+                select(ConversationArchive.conversation_id).where(
+                    ConversationArchive.archived_at < cutoff
+                )
+            )
+        ).all()
+        if ids and not dry_run:
+            await session.execute(
+                delete(ConversationArchive).where(ConversationArchive.archived_at < cutoff)
+            )
+            await session.commit()
+    return len(ids)
+
+
+async def purge_demo(hours: int, dry_run: bool = False) -> tuple[int, int, int]:
+    """Archive, then delete, demo sandboxes older than `hours`.
+
+    Returns (sandboxes, conversations archived, conversations with a breach).
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    total = 0
+    total = archived = breached = 0
     while True:
         async with db.SessionLocal() as session:
             cids = (
@@ -68,6 +102,9 @@ async def purge_demo(hours: int, dry_run: bool = False) -> int:
             total += len(cids)
             if dry_run:
                 break
+            records = await archive(session, list(cids))
+            archived += len(records)
+            breached += sum(1 for r in records if r["breach"])
             convs = select(Conversation.id).where(Conversation.customer_id.in_(cids))
             orders = select(Order.id).where(Order.customer_id.in_(cids))
             await session.execute(delete(ReasoningEvent).where(ReasoningEvent.conversation_id.in_(convs)))
@@ -77,7 +114,7 @@ async def purge_demo(hours: int, dry_run: bool = False) -> int:
             await session.execute(delete(Order).where(Order.customer_id.in_(cids)))
             await session.execute(delete(Customer).where(Customer.id.in_(cids)))
             await session.commit()
-    return total
+    return total, archived, breached
 
 
 def main() -> None:
@@ -93,17 +130,22 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    async def run() -> tuple[int, int]:
-        demo = await purge_demo(args.demo_hours, args.dry_run) if args.demo_hours else 0
+    async def run() -> tuple[int, tuple[int, int, int], int]:
+        demo = await purge_demo(args.demo_hours, args.dry_run) if args.demo_hours else (0, 0, 0)
         convs = await purge(args.days, args.dry_run)
+        archived = await purge_archive(args.days, args.dry_run)
         await db.dispose()
-        return convs, demo
+        return convs, demo, archived
 
-    convs, demo = asyncio.run(run())
+    convs, (sandboxes, archived, breached), expired = asyncio.run(run())
     verb = "would delete" if args.dry_run else "deleted"
     print(f"retention: {verb} {convs} conversations older than {args.days} days")
     if args.demo_hours:
-        print(f"retention: {verb} {demo} demo sandboxes older than {args.demo_hours} hours")
+        print(
+            f"retention: {verb} {sandboxes} demo sandboxes older than {args.demo_hours} hours "
+            f"(archived {archived} conversations, {breached} with a breach)"
+        )
+    print(f"retention: {verb} {expired} archived conversations older than {args.days} days")
 
 
 if __name__ == "__main__":

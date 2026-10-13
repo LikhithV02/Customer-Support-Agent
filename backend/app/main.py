@@ -165,6 +165,8 @@ async def meta() -> dict:
         "demo": {
             "session_ttl_s": settings.demo_token_ttl_s,
             "data_ttl_hours": settings.demo_data_ttl_hours,
+            # Chats are archived for review when a sandbox is purged (maintenance/archive.py).
+            "transcript_retention_days": settings.retention_days,
         }
         if settings.is_demo
         else None,

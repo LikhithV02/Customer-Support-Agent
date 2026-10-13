@@ -235,7 +235,8 @@ export default function App() {
             <GhostCta href={REPO_URL}>Read the code</GhostCta>
           </div>
           <p className="mt-4 text-[13px] text-subtle">
-            No sign‑up. You get a private sandbox with one order per refund‑policy branch, deleted after 24 hours.
+            No sign‑up. You get a private sandbox with one order per refund‑policy branch that resets after
+            24 hours. Chats are kept for 90 days to review attacks, so please don't enter personal details.
           </p>
           <div className="mt-11 flex items-center gap-3.5 border-t border-line-soft pt-6">
             <div className="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface-2 font-mono text-[13px] text-brand">

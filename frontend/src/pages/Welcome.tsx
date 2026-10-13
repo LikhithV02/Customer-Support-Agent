@@ -36,6 +36,7 @@ export default function Welcome() {
   const toast = useToast();
   const { meta } = useMeta();
   const ttl = meta?.demo?.data_ttl_hours ?? 24;
+  const keepDays = meta?.demo?.transcript_retention_days ?? 90;
 
   async function start() {
     setStarting(true);
@@ -71,8 +72,9 @@ export default function Welcome() {
               {starting ? "Creating your sandbox…" : "Start the demo"}
               {!starting && <ArrowRight size={16} />}
             </Button>
-            <span className="text-xs text-subtle">
-              Sandbox data is deleted after {ttl} hours.
+            <span className="max-w-xs text-xs text-subtle">
+              Your sandbox resets after {ttl} hours. Chats are kept for {keepDays} days so I can
+              review attacks, so please don't enter personal details.
             </span>
           </div>
         </div>
