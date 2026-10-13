@@ -1,30 +1,44 @@
-# ACME — AI Customer Support Agent (Refund Automation)
+# Refund Agent: an AI support agent you can't talk into a bad refund
 
 **[Live demo](https://refund-agent.likhithv.com)** ·
-[Project page](https://likhithv02.github.io/Customer-Support-Agent/) ·
+**[Case study](https://likhithv02.github.io/Customer-Support-Agent/)** ·
 [How it's deployed](docs/DEPLOY.md) · [Production guide](docs/PRODUCTION.md) ·
-[Load testing](docs/LOADTESTING.md)
+[Load testing](docs/LOADTESTING.md) · [Verification log](docs/VERIFICATION.md)
 
-An end-to-end, fully containerized AI customer-support agent that **approves,
-denies, or escalates e-commerce refunds**. A signed-in customer chats with the
-agent; the agent looks up their order, checks it against a strict refund policy,
-and issues a refund only when the policy allows. An admin dashboard streams the
-agent's internal reasoning live.
+![The chat UI with the agent's live reasoning trace](landing/public/screens/chat-dark.png)
 
-Built with **FastAPI + LangGraph** (backend/agent), **React + Vite** (frontend),
-**Postgres** (mock CRM), **Redis** (shared state), and a **provider-agnostic LLM
-layer** (Anthropic, OpenAI, Gemini or any OpenAI-compatible proxy).
+An AI customer-support agent that **approves, denies or escalates e-commerce
+refunds**. A signed-in customer chats with it; the agent looks up their order,
+checks it against the refund policy and acts. The LLM proposes, the code
+disposes: a refund is written only after a deterministic policy engine, re-run
+inside the refund tool, allows it. An agent console streams every step of the
+agent's reasoning live.
+
+## Results
+
+| | |
+|---|---|
+| **Golden-set evals** | 83 conversations run on every PR. 100% money-safe, policy-correct and tool-correct on Gemini 3.8 Flash and GPT-5.6; tone rated 1.00 / 0.98 by an LLM judge (Opik G-Eval). [Details](backend/evals/README.md) |
+| **Red team** | 120 attacks written by an attacker LLM (promptfoo, incl. multi-turn Crescendo). 0 forbidden approvals, double refunds or data leaks in the database; 3 real issues found and fixed. [Details](backend/redteam/README.md) |
+| **Load simulation** | 2,500-user spike with Locust: 131,272 requests, 0 failures, 120 ms p95 time to first streamed event, 10/10 correctness invariants. Profiling raised throughput from 35 to 53 turns/s. [Details](docs/LOADTESTING.md) |
+
+## Stack
+
+**FastAPI + LangGraph** (backend and agent), **React + Vite + Tailwind**
+(chat and console), **Postgres** (orders and refund ledger), **Redis** (rate
+limits, locks, pub/sub), and a **provider-agnostic LLM layer** (Gemini,
+OpenAI, Anthropic or any OpenAI-compatible proxy, with failover). Evals with
+**Opik**, red teaming with **promptfoo**, load testing with **Locust**.
 
 **Production-ready and horizontally scalable:** JWT identity, stateless backend
-pods, Kubernetes manifests with autoscaling, Prometheus metrics, and a Locust
-load simulation of thousands of concurrent users that checks both latency SLOs
-and refund correctness. See [docs/PRODUCTION.md](docs/PRODUCTION.md) and
-[docs/LOADTESTING.md](docs/LOADTESTING.md).
+pods, Kubernetes manifests with autoscaling, Prometheus metrics, and CI that
+runs the tests, the evals and a load smoke on every PR. See
+[docs/PRODUCTION.md](docs/PRODUCTION.md).
 
 **Public demo mode:** `AUTH_MODE=demo` gives every visitor a private sandbox
 customer (one order per refund-policy branch) plus a scoped admin token for the
 agent console, with per-IP and token-budget limits. When the budget runs out, turns
-fall back to the scripted model. It's deployed as a GitHub Pages landing page,
+fall back to the scripted model. It runs as a GitHub Pages case-study page,
 a Cloudflare-hosted UI and a Cloud Run backend (Neon Postgres, Upstash Redis). See
 [docs/DEPLOY.md](docs/DEPLOY.md).
 
@@ -110,7 +124,7 @@ flowchart LR
         Bus["Redis<br/>pub/sub · locks · rate limits"]
     end
 
-    LLM["LLM provider<br/>Anthropic / OpenAI<br/>(agent/llm.py)"]
+    LLM["LLM provider<br/>Gemini / OpenAI / Anthropic<br/>(agent/llm.py)"]
 
     Chat -- REST + SSE --> Chat_API
     Admin -- REST --> Convo_REST
@@ -337,7 +351,7 @@ commands in [`docs/HARDENING.md`](docs/HARDENING.md).
 .
 ├── docker-compose.yml          # local stack (+ `loadtest` profile)
 ├── .env.example                # configuration
-├── .github/workflows/ci.yml    # lint, tests (SQLite + Postgres), manifests, load smoke, images
+├── .github/workflows/          # CI, weekly red team, Cloud Run deploy, Pages
 ├── backend/                    # FastAPI + LangGraph
 │   ├── app/
 │   │   ├── main.py             # routes + SSE endpoints
@@ -351,11 +365,15 @@ commands in [`docs/HARDENING.md`](docs/HARDENING.md).
 │   │   └── maintenance/        # data-retention job
 │   ├── alembic/                # migrations
 │   ├── scripts/                # synthetic load-test data
+│   ├── evals/                  # golden-set evals (83 cases) + baseline gate
+│   ├── redteam/                # promptfoo red team + reviewed results
 │   └── tests/
-├── frontend/                   # React + Vite + Tailwind
+├── frontend/                   # React + Vite + Tailwind (chat + agent console)
 │   ├── nginx.conf              # serves SPA + proxies /api (SSE-safe)
 │   └── src/                    # Chat + Admin pages, auth, ReasoningTimeline
+├── landing/                    # case-study page (GitHub Pages)
 ├── loadtest/                   # Locust simulation, shapes, SLOs, invariant checks
+├── deploy/cloudrun/            # Cloud Run service, migrate + cleanup jobs
 ├── deploy/k8s/                 # Kustomize: base, overlays/{dev,prod}, loadtest
 └── docs/                       # PRODUCTION, LOADTESTING, HARDENING, VERIFICATION
 ```

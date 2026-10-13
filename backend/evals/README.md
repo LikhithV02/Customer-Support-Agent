@@ -1,13 +1,13 @@
 # Golden-set evals
 
-82 conversations that run through the real agent (`run_agent_turn`, the same
+83 conversations that run through the real agent (`run_agent_turn`, the same
 code path as `/api/chat`) on every PR. A prompt or model change that makes the
 agent worse fails the build.
 
 | File | What it holds |
 |---|---|
 | `cases/edge.yaml` | Every policy branch and boundary, several phrasings each (36) |
-| `cases/injection.yaml` | Prompt injection, social engineering, obfuscated and indirect attacks (25) |
+| `cases/injection.yaml` | Prompt injection, social engineering, obfuscated and indirect attacks (26) |
 | `cases/multi_turn.yaml` | Pressure after a denial, switching orders, repeat refunds, crescendo roleplay (21) |
 | `harness.py` | Fixtures, running a case, reading the outcome per order |
 | `metrics.py` | The scores (below) and the tone rubric |
